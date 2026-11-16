@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Topgrip IPIS / VDC AVDB (192x112) SNMPv3 Trap Controller</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@600;800;900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- TOP NAVIGATION / HEADER -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="rail-logo">
+        <span class="logo-icon">🚆</span>
+        <div class="logo-text">
+          <div class="title-row">
+            <span class="brand-title">IPIS VDC MATRIX CONTROLLER</span>
+            <span class="badge-pen">PEN 66731</span>
+          </div>
+          <span class="subtitle">Topgrip IPIS Video Display Board & SNMPv3 Trap Diagnostics</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="status-pill connected" id="nmsStatusPill">
+        <span class="indicator-dot"></span>
+        <span class="pill-label">NMS TARGET:</span>
+        <strong id="headerNmsTarget">10.0.0.252:162 (UDP)</strong>
+      </div>
+      <div class="status-pill board-info">
+        <span class="pill-label">BOARD:</span>
+        <strong id="headerBoardType">AVDB (192×112)</strong>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button class="btn-action btn-phone" id="btnPhoneConnect" title="Connect Phone via Wi-Fi">
+        <span class="icon">📱</span>
+        <span class="btn-text">Phone Wi-Fi QR</span>
+      </button>
+      <button class="btn-action btn-settings" id="btnOpenSettings" title="Configure SNMP & NMS">
+        <span class="icon">⚙️</span>
+        <span class="btn-text">Settings</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-layout">
+
+    <!-- ALARM STATE & MANUAL CLEAR CONTROLLER BANNER -->
+    <section class="section-card alarm-status-card" id="alarmStatusCard">
+      <div class="alarm-status-wrapper">
+        <div class="alarm-status-info">
+          <div class="alarm-indicator-pulse" id="alarmPulseIndicator"></div>
+          <div class="alarm-status-text">
+            <div class="alarm-status-title-row">
+              <span class="alarm-title-tag">NMS ALARM MONITOR</span>
+              <span class="alarm-state-badge status-healthy" id="alarmStateBadge">🟢 SYSTEM HEALTHY (NO ACTIVE
+                ALARM)</span>
+            </div>
+            <p class="alarm-status-desc" id="alarmStatusDesc">All LED pixels are operational. Traps stay active in NMS
+              until the Clear Trap button is clicked.</p>
+          </div>
+        </div>
+        <div class="alarm-status-action">
+          <button class="btn-clear-trap-main" id="btnMainClearTrap"
+            title="Send Event 100 to NMS to Clear Active Alarms">
+            <span class="icon">🟢</span>
+            <span class="btn-text">Clear Trap / Restore Healthy (Event 100)</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TOP ROW: QUICK 1-CLICK TRAP ACTION BUTTONS -->
+    <section class="section-card trap-presets-card">
+      <div class="card-header flex-between">
+        <div class="header-title">
+          <span class="icon">⚡</span>
+          <h3>1-Click SNMPv3 Trap Presets</h3>
+        </div>
+        <div class="header-actions">
+          <button class="btn-auto-test" id="btnRunAutoTest" title="Run Automated Trap Test Sequence">
+            <span class="icon">🚀</span>
+            <span class="btn-text">Run Auto Test (All Traps)</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="preset-buttons-grid">
+        <!-- 1st: CLEAR / HEALTHY (Event 100) -->
+        <button class="preset-btn btn-info-ok" id="btnPresetInfo">
+          <div class="preset-top">
+            <span class="preset-badge info">EVENT 100</span>
+            <span class="severity-badge sev-info">CLEAR / INFO</span>
+          </div>
+          <div class="preset-title">1. Clear Trap / Restore Healthy</div>
+          <div class="preset-sub" id="presetInfoSub">HSR: "All OK" | Clears NMS Alarm</div>
+          <div class="preset-footer">Send Clear Trap →</div>
+        </button>
+
+        <!-- 2nd: SHORT CIRCUIT (Event 102) -->
+        <button class="preset-btn btn-fault-short" id="btnPresetShort">
+          <div class="preset-top">
+            <span class="preset-badge short">EVENT 102</span>
+            <span class="severity-badge sev-major">MAJOR</span>
+          </div>
+          <div class="preset-title">2. SHORT Circuit</div>
+          <div class="preset-sub" id="presetShortSub">HSR: "S-L1R10C15" (Row 10, Col 15)</div>
+          <div class="preset-footer">Send Short Trap →</div>
+        </button>
+
+        <!-- 3rd: OPEN CIRCUIT (Event 103) -->
+        <button class="preset-btn btn-fault-open" id="btnPresetOpen">
+          <div class="preset-top">
+            <span class="preset-badge open">EVENT 103</span>
+            <span class="severity-badge sev-major">MAJOR</span>
+          </div>
+          <div class="preset-title">3. OPEN Circuit</div>
+          <div class="preset-sub" id="presetOpenSub">HSR: "O-L1R10C15" (Row 10, Col 15)</div>
+          <div class="preset-footer">Send Open Trap →</div>
+        </button>
+
+        <!-- 4th: SEND CURRENT MATRIX STATE -->
+        <button class="preset-btn btn-matrix-send" id="btnSendMatrixTrap">
+          <div class="preset-top">
+            <span class="preset-badge matrix">LIVE MATRIX</span>
+            <span class="severity-badge sev-critical" id="matrixSeverityBadge">AUTO</span>
+          </div>
+          <div class="preset-title">4. Transmit Active Matrix Faults</div>
+          <div class="preset-sub" id="matrixHsrSummary">HSR: "All OK"</div>
+          <div class="preset-footer">Send Matrix Trap →</div>
+        </button>
+      </div>
+    </section>
+
+    <!-- MIDDLE ROW: INTERACTIVE AVDB 192x112 SIMULATOR -->
+    <section class="section-card matrix-simulator-card">
+      <div class="card-header flex-between">
+        <div class="header-title">
+          <span class="icon">📺</span>
+          <h3>AVDB Interactive LED Matrix Simulator (192 Columns × 112 Rows)</h3>
+          <span class="badge-diode-count" id="badgeDiodeCount">21,504 LEDs</span>
+        </div>
+
+        <!-- TOOLBAR CONTROLS -->
+        <div class="matrix-toolbar">
+          <div class="tool-group">
+            <span class="tool-label">Tool:</span>
+            <button class="tool-btn active" data-tool="short" id="toolShort" title="Paint Short Circuit (Red)">
+              <span class="tool-dot red"></span> Short (S)
+            </button>
+            <button class="tool-btn" data-tool="open" id="toolOpen" title="Paint Open Circuit (Amber)">
+              <span class="tool-dot yellow"></span> Open (O)
+            </button>
+            <button class="tool-btn" data-tool="clear" id="toolClear" title="Clear LED (Normal)">
+              <span class="tool-dot green"></span> Clear (OK)
+            </button>
+          </div>
+
+          <div class="tool-group">
+            <span class="tool-label">Zoom:</span>
+            <button class="zoom-btn" id="btnZoomFit">Fit</button>
+            <button class="zoom-btn" id="btnZoom1x">1x</button>
+            <button class="zoom-btn" id="btnZoom2x">2x</button>
+            <button class="zoom-btn" id="btnZoom4x">4x</button>
+          </div>
+
+          <button class="btn-clear-all" id="btnClearAllFaults">
+            <span class="icon">🔄</span> Clear Board (All OK)
+          </button>
+        </div>
+      </div>
+
+      <!-- COORDINATE DIRECT INJECTOR & TRAP DISPATCH BAR -->
+      <div class="coord-bar">
+        <div class="coord-inputs">
+          <div class="input-item">
+            <label>Line (L):</label>
+            <input type="number" id="inputLine" value="1" min="1" max="8">
+          </div>
+          <div class="input-item">
+            <label>Row (R):</label>
+            <input type="number" id="inputRow" value="10" min="1" max="112">
+          </div>
+          <div class="input-item">
+            <label>Col (C):</label>
+            <input type="number" id="inputCol" value="15" min="1" max="192">
+          </div>
+        </div>
+
+        <div class="coord-actions">
+          <button class="btn-coord btn-coord-short" id="btnSendShortCoord"
+            title="Send Short Circuit Trap with Current Coordinates">
+            🔴 Send Short Trap (S-L<span class="c-l">1</span>R<span class="c-r">10</span>C<span class="c-c">15</span>)
+          </button>
+          <button class="btn-coord btn-coord-open" id="btnSendOpenCoord"
+            title="Send Open Circuit Trap with Current Coordinates">
+            🟠 Send Open Trap (O-L<span class="c-l">1</span>R<span class="c-r">10</span>C<span class="c-c">15</span>)
+          </button>
+          <button class="btn-coord btn-coord-clear" id="btnSendClearCoord" title="Send Healthy/Clear Trap (Event 100)">
+            🟢 Send Clear Trap (All OK)
+          </button>
+          <button class="btn-coord btn-quick-pattern" id="btnInjectMulti" title="Inject Sample Multi-Fault">
+            ⚡ Multi-Fault (#)
+          </button>
+          <button class="btn-coord btn-random" id="btnRandomFaults" title="Inject 5 Random Faults">
+            🎲 Random 5
+          </button>
+        </div>
+
+        <div class="coord-readout">
+          <span class="label">Cursor:</span>
+          <span class="value" id="cursorPosReadout">L1 R-- C--</span>
+        </div>
+      </div>
+
+      <!-- CANVAS VIEWPORT -->
+      <div class="matrix-canvas-wrapper" id="canvasWrapper">
+        <div class="canvas-scroll-container" id="canvasScrollContainer">
+          <canvas id="matrixCanvas" width="1536" height="896"></canvas>
+        </div>
+        <div class="canvas-overlay-hud">
+          <div class="hud-item"><span class="hud-label">Faults Active:</span> <strong id="hudFaultCount">0</strong>
+          </div>
+          <div class="hud-item"><span class="hud-label">Short:</span> <span class="hud-val red"
+              id="hudShortCount">0</span></div>
+          <div class="hud-item"><span class="hud-label">Open:</span> <span class="hud-val yellow"
+              id="hudOpenCount">0</span></div>
+        </div>
+      </div>
+
+      <!-- LIVE STATUS REPORT & JSON PAYLOAD DUAL VIEW -->
+      <div class="matrix-output-row">
+        <!-- HSR STRING CARD -->
+        <div class="output-box hsr-box">
+          <div class="output-header">
+            <span class="tag">HEALTH STATUS REPORT (HSR)</span>
+            <span class="format-hint">Format: S-L1R10C15# O-L1R10C15</span>
+          </div>
+          <div class="hsr-display" id="liveHsrString">"All OK"</div>
+        </div>
+
+        <!-- JSON PAYLOAD (SPECIFICATION MATCH) -->
+        <div class="output-box json-box">
+          <div class="output-header">
+            <span class="tag">SPECIFICATION JSON PAYLOAD</span>
+            <button class="btn-copy-json" id="btnCopyJson" title="Copy JSON">📋 Copy JSON</button>
+          </div>
+          <pre class="json-code" id="liveJsonPayload">{
+  "vendor": "Topgrip",
+  "device": "AVDB",
+  "IP": "10.0.0.15",
+  "PF": "1",
+  "INT": 50,
+  "HSR": "All OK"
+}</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOWER ROW: 13 VARBINDS & LIVE TRAP ACTIVITY LOG -->
+    <div class="bottom-grid">
+      <!-- 13 VARBINDS TABLE -->
+      <section class="section-card varbinds-card">
+        <div class="card-header flex-between">
+          <div class="header-title">
+            <span class="icon">📋</span>
+            <h3>Topgrip IPIS 13 Varbinds Specification</h3>
+          </div>
+          <span class="badge-oid">Trap OID: 1.3.6.1.4.1.66731.5.11</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="varbind-table" id="varbindTable">
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th>Field Name</th>
+                <th>OID</th>
+                <th>SNMP Type</th>
+                <th>Live Value</th>
+              </tr>
+            </thead>
+            <tbody id="varbindTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- LIVE TRAP DISPATCH HISTORY -->
+      <section class="section-card history-card">
+        <div class="card-header flex-between">
+          <div class="header-title">
+            <span class="icon">📡</span>
+            <h3>Live NMS Trap Activity Log</h3>
+          </div>
+          <div class="history-actions">
+            <button class="btn-small-clear" id="btnClearHistory">Clear Log</button>
+          </div>
+        </div>
+
+        <div class="history-list" id="trapHistoryList">
+          <div class="empty-history" id="emptyHistoryMsg">
+            <span class="icon">📭</span>
+            <p>No SNMPv3 traps sent yet. Click any preset above to transmit to NMS!</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: PHONE / WI-FI QR CODE CONNECTION -->
+  <!-- ============================================================== -->
+  <div class="modal-backdrop" id="qrModalBackdrop">
+    <div class="modal-box modal-qr">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">📱</span>
+          <h3>Connect Phone over Wi-Fi</h3>
+        </div>
+        <button class="btn-close-modal" id="btnCloseQrModal">✕</button>
+      </div>
+      <div class="modal-body text-center">
+        <p class="modal-lead">Scan this QR Code with your smartphone camera to open and operate the controller
+          wirelessly on the same Wi-Fi network:</p>
+
+        <div class="qr-container">
+          <img id="qrCodeImage" src="" alt="Scan QR Code to open web controller">
+        </div>
+
+        <div class="url-display-box">
+          <span class="url-label">Direct Phone URL:</span>
+          <a id="qrUrlLink" href="#" target="_blank" class="url-link">http://192.168.1.5:8080</a>
+        </div>
+
+        <div class="network-interfaces-list" id="networkInterfacesList">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: SETTINGS & SNMP CONFIGURATION -->
+  <!-- ============================================================== -->
+  <div class="modal-backdrop" id="settingsModalBackdrop">
+    <div class="modal-box modal-settings">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">⚙️</span>
+          <h3>NMS & Board Configuration</h3>
+        </div>
+        <button class="btn-close-modal" id="btnCloseSettingsModal">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="settingsForm">
+          <div class="settings-section-title">📡 NMS Destination Configuration</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>NMS Server IP Address *</label>
+              <input type="text" id="cfgNmsIp" value="10.0.0.252" required>
+            </div>
+            <div class="form-group">
+              <label>NMS Trap UDP Port *</label>
+              <input type="number" id="cfgNmsPort" value="162" required>
+            </div>
+          </div>
+
+          <div class="settings-section-title">🔐 SNMPv3 USM Credentials (authPriv)</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>USM Username *</label>
+              <input type="text" id="cfgUsmUser" value="ipisMgmt_Admin" required>
+            </div>
+            <div class="form-group">
+              <label>Engine ID *</label>
+              <input type="text" id="cfgEngineId" value="ENT--BALLY" required>
+            </div>
+            <div class="form-group">
+              <label>Auth Protocol & Passphrase *</label>
+              <input type="password" id="cfgAuthKey" value="BallyStationAuthKey2026!" required>
+              <span class="input-hint">HMAC-SHA-256</span>
+            </div>
+            <div class="form-group">
+              <label>Priv Protocol & Passphrase *</label>
+              <input type="password" id="cfgPrivKey" value="BallyStationPrivKey2026!" required>
+              <span class="input-hint">AES-128</span>
+            </div>
+          </div>
+
+          <div class="settings-section-title">📺 Display Board Parameters</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Device IP (ipisDeviceIp) *</label>
+              <input type="text" id="cfgDeviceIp" value="10.0.0.81" required>
+              <span class="input-hint">Must match device IP in NMS</span>
+            </div>
+            <div class="form-group">
+              <label>Vendor Name</label>
+              <input type="text" id="cfgVendor" value="Topgrip">
+            </div>
+            <div class="form-group">
+              <label>Device Type</label>
+              <select id="cfgDevice">
+                <option value="AVDB" selected>AVDB (At-a-Glance Video Display Board)</option>
+                <option value="VDB">VDB (Video Display Board)</option>
+                <option value="MLD">MLD (Multi Line Display)</option>
+                <option value="PFD">PFD (Platform Display)</option>
+                <option value="AGD">AGD (At-a-Glance Display)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Platform (PF)</label>
+              <input type="text" id="cfgPlatform" value="1">
+            </div>
+            <div class="form-group">
+              <label>Intensity (INT: 0-100)</label>
+              <input type="number" id="cfgIntensity" value="50" min="0" max="100">
+            </div>
+            <div class="form-group">
+              <label>Board Width (Cols)</label>
+              <input type="number" id="cfgBoardWidth" value="192" readonly>
+            </div>
+            <div class="form-group">
+              <label>Board Height (Rows)</label>
+              <input type="number" id="cfgBoardHeight" value="112" readonly>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" id="btnCancelSettings">Cancel</button>
+            <button type="submit" class="btn-primary" id="btnSaveSettings">Save & Apply Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
