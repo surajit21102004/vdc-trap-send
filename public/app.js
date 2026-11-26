@@ -99,6 +99,22 @@
   const btnCancelSettings = document.getElementById('btnCancelSettings');
   const settingsForm = document.getElementById('settingsForm');
 
+  // Shareable GET API Modal Elements
+  const apiModalBackdrop = document.getElementById('apiModalBackdrop');
+  const btnOpenApiModal = document.getElementById('btnOpenApiModal');
+  const btnCloseApiModal = document.getElementById('btnCloseApiModal');
+  const apiShortUrlText = document.getElementById('apiShortUrlText');
+  const apiFaultsUrlText = document.getElementById('apiFaultsUrlText');
+  const apiShortOnlyUrlText = document.getElementById('apiShortOnlyUrlText');
+  const apiRawHsrUrlText = document.getElementById('apiRawHsrUrlText');
+  const apiCoordCheckUrlText = document.getElementById('apiCoordCheckUrlText');
+  const curlCommandText = document.getElementById('curlCommandText');
+  const apiLivePreviewCode = document.getElementById('apiLivePreviewCode');
+  const btnCopyApiUrl = document.getElementById('btnCopyApiUrl');
+  const btnOpenApiInTab = document.getElementById('btnOpenApiInTab');
+  const btnCopyCurlCmd = document.getElementById('btnCopyCurlCmd');
+  const btnRefreshApiPreview = document.getElementById('btnRefreshApiPreview');
+
   const headerNmsTarget = document.getElementById('headerNmsTarget');
   const headerBoardType = document.getElementById('headerBoardType');
 
@@ -109,6 +125,7 @@
     await fetchNetworkInfo();
     await fetchConfig();
     await fetchHistory();
+    await fetchActiveFaults();
     updateHsrAndJson();
     renderMatrix();
     updateVarbindTable();
@@ -117,6 +134,24 @@
 
     // Periodic History Sync
     setInterval(fetchHistory, 3000);
+  }
+
+  async function fetchActiveFaults() {
+    try {
+      const res = await fetch('/api/led-faults');
+      const data = await res.json();
+      if (data && Array.isArray(data.faults) && data.faults.length > 0) {
+        state.faults.clear();
+        for (const f of data.faults) {
+          state.faults.set(`${f.row}_${f.col}`, {
+            line: f.line || 1,
+            row: f.row,
+            col: f.col,
+            type: f.type || 'SHORT'
+          });
+        }
+      }
+    } catch (e) { }
   }
 
   // Canvas Setup
@@ -299,6 +334,31 @@
     renderMatrix();
     updateHsrAndJson();
     updateVarbindTable();
+    syncFaultsToServer();
+  }
+
+  // Synchronize Live Matrix Faults to Server (Debounced)
+  let syncTimer = null;
+  function syncFaultsToServer() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(async () => {
+      try {
+        const faultList = Array.from(state.faults.values());
+        const hsr = calculateHsrString();
+        await fetch('/api/led-faults', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            faults: faultList,
+            hsr: hsr,
+            line: state.line
+          })
+        });
+        if (apiModalBackdrop && apiModalBackdrop.classList.contains('active')) {
+          fetchApiLivePreview();
+        }
+      } catch (e) { }
+    }, 250);
   }
 
   // Calculate HSR String (Topgrip / RDSO Specification)
@@ -654,6 +714,7 @@
     renderMatrix();
     updateHsrAndJson();
     updateVarbindTable();
+    syncFaultsToServer();
     showToast(`Injected Sample Multi-Fault (#)`, 'info');
   });
 
@@ -668,6 +729,7 @@
     renderMatrix();
     updateHsrAndJson();
     updateVarbindTable();
+    syncFaultsToServer();
     showToast(`Injected 5 Random Pixel Faults`, 'info');
   });
 
@@ -676,6 +738,7 @@
     renderMatrix();
     updateHsrAndJson();
     updateVarbindTable();
+    syncFaultsToServer();
     showToast(`Matrix Cleared -> All OK`, 'info');
   });
 
@@ -836,6 +899,86 @@
   btnOpenSettings.addEventListener('click', () => settingsModalBackdrop.classList.add('active'));
   btnCloseSettingsModal.addEventListener('click', () => settingsModalBackdrop.classList.remove('active'));
   btnCancelSettings.addEventListener('click', () => settingsModalBackdrop.classList.remove('active'));
+
+  // -------------------------------------------------------------
+  // SHAREABLE LED FAULTS GET API MODAL LOGIC
+  // -------------------------------------------------------------
+  async function fetchApiLivePreview() {
+    try {
+      if (apiLivePreviewCode) {
+        apiLivePreviewCode.textContent = 'Loading live GET /api/led-short response...';
+      }
+      const res = await fetch('/api/led-short');
+      const data = await res.json();
+      if (apiLivePreviewCode) {
+        apiLivePreviewCode.textContent = JSON.stringify(data, null, 2);
+      }
+    } catch (err) {
+      if (apiLivePreviewCode) {
+        apiLivePreviewCode.textContent = `Error fetching API: ${err.message}`;
+      }
+    }
+  }
+
+  function updateApiModalUrls() {
+    const origin = window.location.origin;
+    const shortUrl = `${origin}/api/led-short`;
+    const faultsUrl = `${origin}/api/led-faults`;
+    const shortOnlyUrl = `${origin}/api/led-short?type=short`;
+    const rawHsrUrl = `${origin}/api/led-short?raw=hsr`;
+    const l = parseInt(inputLine.value, 10) || 1;
+    const r = parseInt(inputRow.value, 10) || 10;
+    const c = parseInt(inputCol.value, 10) || 15;
+    const coordUrl = `${origin}/api/led-short?line=${l}&row=${r}&col=${c}`;
+    const curlCmd = `curl -s ${shortUrl}`;
+
+    if (apiShortUrlText) apiShortUrlText.textContent = shortUrl;
+    if (apiFaultsUrlText) apiFaultsUrlText.textContent = faultsUrl;
+    if (apiShortOnlyUrlText) apiShortOnlyUrlText.textContent = shortOnlyUrl;
+    if (apiRawHsrUrlText) apiRawHsrUrlText.textContent = rawHsrUrl;
+    if (apiCoordCheckUrlText) apiCoordCheckUrlText.textContent = coordUrl;
+    if (curlCommandText) curlCommandText.textContent = curlCmd;
+    if (btnOpenApiInTab) btnOpenApiInTab.href = shortUrl;
+  }
+
+  if (btnOpenApiModal) {
+    btnOpenApiModal.addEventListener('click', () => {
+      updateApiModalUrls();
+      fetchApiLivePreview();
+      if (apiModalBackdrop) apiModalBackdrop.classList.add('active');
+    });
+  }
+
+  if (btnCloseApiModal) {
+    btnCloseApiModal.addEventListener('click', () => {
+      if (apiModalBackdrop) apiModalBackdrop.classList.remove('active');
+    });
+  }
+
+  if (btnCopyApiUrl) {
+    btnCopyApiUrl.addEventListener('click', () => {
+      const url = apiShortUrlText ? apiShortUrlText.textContent : `${window.location.origin}/api/led-short`;
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('🔗 GET API Link copied to clipboard! Ready to share.', 'success');
+      });
+    });
+  }
+
+  if (btnCopyCurlCmd) {
+    btnCopyCurlCmd.addEventListener('click', () => {
+      const cmd = curlCommandText ? curlCommandText.textContent : `curl -s ${window.location.origin}/api/led-short`;
+      navigator.clipboard.writeText(cmd).then(() => {
+        showToast('💻 cURL command copied to clipboard!', 'success');
+      });
+    });
+  }
+
+  if (btnRefreshApiPreview) {
+    btnRefreshApiPreview.addEventListener('click', () => {
+      fetchApiLivePreview();
+      showToast('Live API response refreshed', 'info');
+    });
+  }
 
   // -------------------------------------------------------------
   // CANVAS MOUSE & TOUCH EVENT LISTENERS

@@ -73,3 +73,108 @@ node server.js
 | 11 | `ipisFaultColumn` | `1.3.6.1.4.1.66731.3.11` | INTEGER | `15` |
 | 12 | `ipisFaultDescription` | `1.3.6.1.4.1.66731.3.12` | OCTET STRING | `"LED SHORT Circuit detected..."` |
 | 13 | `ipisBoardDimensions` | `1.3.6.1.4.1.66731.3.13` | OCTET STRING | `"192x112"` |
+
+---
+
+## 🔗 Shareable LED Faults & Short Circuit GET API
+
+You can share these standard HTTP `GET` endpoints with any colleague, tester, script, or monitoring software to inspect which LEDs are currently faulty or shorted.
+
+### 📡 Main Endpoint
+- **URL**: `GET http://<IP>:8080/api/led-short` *(or `http://localhost:8080/api/led-short`)*
+- **Aliases**: `GET /api/led-faults`, `GET /api/led-status`, `GET /api/faults`
+
+### 💡 Example cURL
+```bash
+curl -s http://localhost:8080/api/led-short
+```
+
+### 📄 Sample JSON Response (When LED Short Circuit is Active)
+```json
+{
+  "status": "FAULT",
+  "hasFaults": true,
+  "message": "LED SHORT Circuit detected at Line 1 Row 10 Col 15",
+  "summary": {
+    "totalFaults": 1,
+    "shortCount": 1,
+    "openCount": 0,
+    "healthy": false
+  },
+  "hsr": "S-L1R10C15",
+  "eventCode": 102,
+  "eventSeverity": "MAJOR",
+  "shortFaults": [
+    {
+      "line": 1,
+      "row": 10,
+      "col": 15,
+      "type": "SHORT",
+      "code": "S-L1R10C15",
+      "description": "LED SHORT Circuit detected at Line 1 Row 10 Col 15"
+    }
+  ],
+  "openFaults": [],
+  "faults": [
+    {
+      "line": 1,
+      "row": 10,
+      "col": 15,
+      "type": "SHORT",
+      "code": "S-L1R10C15",
+      "description": "LED SHORT Circuit detected at Line 1 Row 10 Col 15"
+    }
+  ],
+  "board": {
+    "vendor": "Topgrip",
+    "device": "AVDB",
+    "ip": "10.0.0.15",
+    "dimensions": "192x112",
+    "platform": "1",
+    "intensity": 50,
+    "line": 1
+  },
+  "timestamp": "2026-11-26T11:06:17.000Z"
+}
+```
+
+### 📄 Sample JSON Response (When Board is Healthy / All OK)
+```json
+{
+  "status": "HEALTHY",
+  "hasFaults": false,
+  "message": "All LED pixels OK. Board healthy and functional.",
+  "summary": {
+    "totalFaults": 0,
+    "shortCount": 0,
+    "openCount": 0,
+    "healthy": true
+  },
+  "hsr": "All OK",
+  "eventCode": 100,
+  "eventSeverity": "INFO",
+  "shortFaults": [],
+  "openFaults": [],
+  "faults": [],
+  "board": {
+    "vendor": "Topgrip",
+    "device": "AVDB",
+    "ip": "10.0.0.15",
+    "dimensions": "192x112",
+    "platform": "1",
+    "intensity": 50,
+    "line": 1
+  },
+  "timestamp": "2026-11-26T11:06:17.000Z"
+}
+```
+
+### 🔍 Query Options & Filters
+| Query Parameter | Description | Example URL |
+|---|---|---|
+| `?type=short` | Filter and return only SHORT circuit faults | `/api/led-short?type=short` |
+| `?type=open` | Filter and return only OPEN circuit faults | `/api/led-short?type=open` |
+| `?line=1&row=10&col=15` | Check if a specific LED coordinate is faulty | `/api/led-short?row=10&col=15` |
+| `?raw=hsr` | Return just the raw HSR string (`S-L1R10C15` or `All OK`) | `/api/led-short?raw=hsr` |
+| `?sort=col` | Sort faults by column instead of row | `/api/led-short?sort=col` |
+

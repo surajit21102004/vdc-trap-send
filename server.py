@@ -45,6 +45,125 @@ CONFIG = {
 TRAP_HISTORY = []
 MAX_HISTORY = 100
 
+# Active LED Faults State (Server In-Memory Cache for GET APIs)
+ACTIVE_LED_FAULTS = {
+    "status": "HEALTHY",
+    "hasFaults": False,
+    "eventCode": 100,
+    "eventSeverity": "INFO",
+    "hsr": "All OK",
+    "faultDescription": "All LED pixels OK. Board healthy and functional.",
+    "summary": {
+        "totalFaults": 0,
+        "shortCount": 0,
+        "openCount": 0,
+        "healthy": True
+    },
+    "shortFaults": [],
+    "openFaults": [],
+    "faults": [],
+    "lastUpdated": datetime.utcnow().isoformat() + "Z"
+}
+
+def parse_hsr_to_faults(hsr, default_line=1):
+    if not hsr or hsr == "All OK":
+        return []
+    import re
+    parts = [p.strip() for p in hsr.split("#") if p.strip()]
+    faults = []
+    for part in parts:
+        m = re.match(r"^([SO])-L(\d+)R(\d+)C(\d+)$", part, re.IGNORECASE)
+        if m:
+            ftype = "SHORT" if m.group(1).upper() == "S" else "OPEN"
+            line = int(m.group(2))
+            row = int(m.group(3))
+            col = int(m.group(4))
+            prefix = "S" if ftype == "SHORT" else "O"
+            faults.append({
+                "line": line,
+                "row": row,
+                "col": col,
+                "type": ftype,
+                "code": f"{prefix}-L{line}R{row}C{col}",
+                "description": f"LED {ftype} Circuit detected at Line {line} Row {row} Col {col}"
+            })
+    return faults
+
+def update_active_faults(new_faults=None, custom_hsr=None, custom_desc=None, default_line=1):
+    global ACTIVE_LED_FAULTS
+    f_list = list(new_faults) if isinstance(new_faults, list) else []
+    if len(f_list) == 0 and custom_hsr and custom_hsr != "All OK":
+        f_list = parse_hsr_to_faults(custom_hsr, default_line)
+
+    normalized = []
+    for f in f_list:
+        ftype = str(f.get("type", "SHORT")).upper()
+        line = int(f.get("line", default_line))
+        row = int(f.get("row", 0))
+        col = int(f.get("col", 0))
+        prefix = "S" if ftype == "SHORT" else "O"
+        code = f.get("code") or f"{prefix}-L{line}R{row}C{col}"
+        desc = f.get("description") or f"LED {ftype} Circuit detected at Line {line} Row {row} Col {col}"
+        normalized.append({
+            "line": line,
+            "row": row,
+            "col": col,
+            "type": ftype,
+            "code": code,
+            "description": desc
+        })
+
+    short_faults = [f for f in normalized if f["type"] == "SHORT"]
+    open_faults = [f for f in normalized if f["type"] == "OPEN"]
+    total = len(normalized)
+    is_healthy = total == 0
+
+    hsr = custom_hsr
+    if not hsr:
+        if is_healthy:
+            hsr = "All OK"
+        else:
+            hsr = "# ".join(f["code"] for f in normalized)
+
+    event_code = 100
+    severity = "INFO"
+    desc = custom_desc
+
+    if not is_healthy:
+        if len(short_faults) > 0:
+            event_code = 102
+            severity = "MAJOR"
+        else:
+            event_code = 103
+            severity = "MAJOR"
+        if not desc:
+            if total == 1:
+                desc = normalized[0]["description"]
+            else:
+                desc = f"Active LED Faults: {len(short_faults)} SHORT, {len(open_faults)} OPEN ({hsr})"
+    else:
+        desc = desc or "All LED pixels OK. Board healthy and functional."
+
+    ACTIVE_LED_FAULTS = {
+        "status": "HEALTHY" if is_healthy else "FAULT",
+        "hasFaults": not is_healthy,
+        "eventCode": event_code,
+        "eventSeverity": severity,
+        "hsr": hsr,
+        "faultDescription": desc,
+        "summary": {
+            "totalFaults": total,
+            "shortCount": len(short_faults),
+            "openCount": len(open_faults),
+            "healthy": is_healthy
+        },
+        "shortFaults": short_faults,
+        "openFaults": open_faults,
+        "faults": normalized,
+        "lastUpdated": datetime.utcnow().isoformat() + "Z"
+    }
+    return ACTIVE_LED_FAULTS
+
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -188,6 +307,72 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"total": len(TRAP_HISTORY), "history": TRAP_HISTORY}).encode("utf-8"))
+        elif parsed.path in ("/api/led-short", "/api/led-faults", "/api/led-status", "/api/faults"):
+            local_ip = get_local_ip()
+            query_params = parse_qs(parsed.query)
+
+            # 1. Raw HSR String: ?raw=hsr
+            if query_params.get("raw", [""])[0].lower() == "hsr":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(ACTIVE_LED_FAULTS["hsr"].encode("utf-8"))
+                return
+
+            filtered = list(ACTIVE_LED_FAULTS["faults"])
+            type_filter = query_params.get("type", [""])[0].upper()
+            if type_filter:
+                filtered = [f for f in filtered if f["type"] == type_filter]
+
+            q_line = int(query_params.get("line", [-1])[0]) if "line" in query_params else None
+            q_row = int(query_params.get("row", [-1])[0]) if "row" in query_params else None
+            q_col = int(query_params.get("col", [-1])[0]) if "col" in query_params else None
+
+            if q_row is not None and q_col is not None:
+                filtered = [f for f in filtered if f["row"] == q_row and f["col"] == q_col and (q_line is None or f["line"] == q_line)]
+
+            sort_by = query_params.get("sort", ["row"])[0].lower()
+            if sort_by == "col":
+                filtered.sort(key=lambda x: (x["col"], x["row"]))
+            elif sort_by == "type":
+                filtered.sort(key=lambda x: (x["type"], x["row"]))
+            else:
+                filtered.sort(key=lambda x: (x["row"], x["col"]))
+
+            board_info = {
+                "vendor": CONFIG["vendor"],
+                "device": CONFIG["device"],
+                "ip": local_ip or CONFIG["deviceIp"],
+                "dimensions": f"{CONFIG['boardWidth']}x{CONFIG['boardHeight']}",
+                "platform": CONFIG["platform"],
+                "intensity": CONFIG["intensity"],
+                "line": CONFIG.get("line", 1)
+            }
+
+            resp = {
+                "status": ACTIVE_LED_FAULTS["status"],
+                "hasFaults": ACTIVE_LED_FAULTS["hasFaults"],
+                "message": ACTIVE_LED_FAULTS["faultDescription"],
+                "summary": ACTIVE_LED_FAULTS["summary"],
+                "hsr": ACTIVE_LED_FAULTS["hsr"],
+                "eventCode": ACTIVE_LED_FAULTS["eventCode"],
+                "eventSeverity": ACTIVE_LED_FAULTS["eventSeverity"],
+                "shortFaults": ACTIVE_LED_FAULTS["shortFaults"],
+                "openFaults": ACTIVE_LED_FAULTS["openFaults"],
+                "faults": filtered,
+                "board": board_info,
+                "timestamp": ACTIVE_LED_FAULTS["lastUpdated"],
+                "apiUrls": {
+                    "ledShortApi": f"http://{local_ip}:{PORT}/api/led-short",
+                    "ledFaultsApi": f"http://{local_ip}:{PORT}/api/led-faults",
+                    "filterShortOnly": f"http://{local_ip}:{PORT}/api/led-short?type=short",
+                    "rawHsrString": f"http://{local_ip}:{PORT}/api/led-short?raw=hsr"
+                }
+            }
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(resp, indent=2).encode("utf-8"))
         else:
             return super().do_GET()
 
@@ -202,6 +387,10 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/send-trap":
             res = send_snmpv3_trap_python(body)
+            if body.get("eventCode") == 100 or body.get("hsr") == "All OK":
+                update_active_faults([], "All OK", body.get("faultDesc", "All LED pixels OK. Board healthy and functional."))
+            elif body.get("hsr"):
+                update_active_faults(body.get("faults", []), body.get("hsr"), body.get("faultDesc"), body.get("line", 1))
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -217,11 +406,19 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
             col = int(body.get("col", 15))
 
             if preset_type in ("INFO_OK", "CLEAR"):
-                payload.update({"eventCode": 100, "severity": body.get("severity", "INFO"), "hsr": body.get("hsr", "All OK"), "line": line, "row": 0, "col": 0, "faultDesc": body.get("faultDesc", "All LED pixels OK. Board healthy and functional.")})
+                desc = body.get("faultDesc", "All LED pixels OK. Board healthy and functional.")
+                payload.update({"eventCode": 100, "severity": body.get("severity", "INFO"), "hsr": body.get("hsr", "All OK"), "line": line, "row": 0, "col": 0, "faultDesc": desc})
+                update_active_faults([], "All OK", desc, line)
             elif preset_type == "SHORT":
-                payload.update({"eventCode": 102, "severity": body.get("severity", "MAJOR"), "hsr": body.get("hsr", f"S-L{line}R{row}C{col}"), "line": line, "row": row, "col": col, "faultDesc": body.get("faultDesc", f"LED SHORT Circuit detected at Line {line} Row {row} Col {col}")})
+                hsr = body.get("hsr", f"S-L{line}R{row}C{col}")
+                desc = body.get("faultDesc", f"LED SHORT Circuit detected at Line {line} Row {row} Col {col}")
+                payload.update({"eventCode": 102, "severity": body.get("severity", "MAJOR"), "hsr": hsr, "line": line, "row": row, "col": col, "faultDesc": desc})
+                update_active_faults([{"line": line, "row": row, "col": col, "type": "SHORT"}], hsr, desc, line)
             elif preset_type == "OPEN":
-                payload.update({"eventCode": 103, "severity": body.get("severity", "MAJOR"), "hsr": body.get("hsr", f"O-L{line}R{row}C{col}"), "line": line, "row": row, "col": col, "faultDesc": body.get("faultDesc", f"LED OPEN Circuit detected at Line {line} Row {row} Col {col}")})
+                hsr = body.get("hsr", f"O-L{line}R{row}C{col}")
+                desc = body.get("faultDesc", f"LED OPEN Circuit detected at Line {line} Row {row} Col {col}")
+                payload.update({"eventCode": 103, "severity": body.get("severity", "MAJOR"), "hsr": hsr, "line": line, "row": row, "col": col, "faultDesc": desc})
+                update_active_faults([{"line": line, "row": row, "col": col, "type": "OPEN"}], hsr, desc, line)
             elif preset_type == "MATRIX_STATE":
                 event_code = int(body.get("eventCode", 102))
                 hsr = body.get("hsr", "All OK")
@@ -239,6 +436,7 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
                     else:
                         fault_desc = f"LED Matrix Faults: {hsr}"
                 payload.update({"eventCode": event_code, "severity": body.get("severity", "INFO" if event_code == 100 else "MAJOR"), "hsr": hsr, "line": m_line, "row": m_row, "col": m_col, "faultDesc": fault_desc})
+                update_active_faults(body.get("faults", []), hsr, fault_desc, m_line)
 
             payload["varbinds"] = build_13_varbinds(payload)
             res = send_snmpv3_trap_python(payload)
@@ -246,6 +444,17 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": True, "preset": preset_type, "result": res}).encode("utf-8"))
+
+        elif parsed.path == "/api/led-faults":
+            faults = body.get("faults", [])
+            hsr = body.get("hsr")
+            desc = body.get("faultDesc")
+            line = body.get("line", 1)
+            updated = update_active_faults(faults, hsr, desc, line)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "message": "LED faults synchronized", "state": updated}).encode("utf-8"))
 
         elif parsed.path == "/api/config":
             CONFIG.update(body)
@@ -306,6 +515,7 @@ if __name__ == "__main__":
     print("=" * 64)
     print(f"📡 Local Web URL:       http://localhost:{PORT}")
     print(f"📱 Phone / Wi-Fi URL:   http://{local_ip}:{PORT}")
+    print(f"🔍 LED Short/Fault API: http://{local_ip}:{PORT}/api/led-short")
     print(f"🎯 Target NMS:          {CONFIG['nmsIp']}:{CONFIG['nmsPort']} (UDP)")
     print(f"🔐 SNMPv3 User:         {CONFIG['usmUser']} (authPriv)")
     print("=" * 64)

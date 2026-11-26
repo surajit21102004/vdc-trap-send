@@ -52,6 +52,135 @@ let config = {
 const trapHistory = [];
 const MAX_HISTORY = 100;
 
+// Active LED Faults State (Server In-Memory Cache for GET APIs)
+let activeLedFaults = {
+  status: 'HEALTHY',
+  hasFaults: false,
+  eventCode: 100,
+  eventSeverity: 'INFO',
+  hsr: 'All OK',
+  faultDescription: 'All LED pixels OK. Board healthy and functional.',
+  summary: {
+    totalFaults: 0,
+    shortCount: 0,
+    openCount: 0,
+    healthy: true
+  },
+  shortFaults: [],
+  openFaults: [],
+  faults: [],
+  lastUpdated: new Date().toISOString()
+};
+
+// Helper: Parse HSR string (e.g. "S-L1R10C15# O-L1R10C16") into structured fault objects
+function parseHsrToFaults(hsr, defaultLine = 1) {
+  if (!hsr || hsr === 'All OK') return [];
+  const parts = hsr.split('#').map(p => p.trim()).filter(Boolean);
+  const faults = [];
+  for (const part of parts) {
+    const match = part.match(/^([SO])-L(\d+)R(\d+)C(\d+)$/i);
+    if (match) {
+      const type = match[1].toUpperCase() === 'S' ? 'SHORT' : 'OPEN';
+      const line = parseInt(match[2], 10);
+      const row = parseInt(match[3], 10);
+      const col = parseInt(match[4], 10);
+      const prefix = type === 'SHORT' ? 'S' : 'O';
+      faults.push({
+        line,
+        row,
+        col,
+        type,
+        code: `${prefix}-L${line}R${row}C${col}`,
+        description: `LED ${type} Circuit detected at Line ${line} Row ${row} Col ${col}`
+      });
+    }
+  }
+  return faults;
+}
+
+// Helper: Update Active LED Faults
+function updateActiveFaults(newFaults, customHsr, customDesc, defaultLine = 1) {
+  let list = Array.isArray(newFaults) ? [...newFaults] : [];
+  if (list.length === 0 && customHsr && customHsr !== 'All OK') {
+    list = parseHsrToFaults(customHsr, defaultLine);
+  }
+
+  // Normalize list
+  const normalized = list.map(f => {
+    const type = (f.type || 'SHORT').toUpperCase();
+    const line = parseInt(f.line !== undefined ? f.line : defaultLine, 10);
+    const row = parseInt(f.row !== undefined ? f.row : 0, 10);
+    const col = parseInt(f.col !== undefined ? f.col : 0, 10);
+    const prefix = type === 'SHORT' ? 'S' : 'O';
+    return {
+      line,
+      row,
+      col,
+      type,
+      code: f.code || `${prefix}-L${line}R${row}C${col}`,
+      description: f.description || `LED ${type} Circuit detected at Line ${line} Row ${row} Col ${col}`
+    };
+  });
+
+  const shortFaults = normalized.filter(f => f.type === 'SHORT');
+  const openFaults = normalized.filter(f => f.type === 'OPEN');
+  const total = normalized.length;
+  const isHealthy = total === 0;
+
+  let hsr = customHsr;
+  if (!hsr) {
+    if (isHealthy) {
+      hsr = 'All OK';
+    } else {
+      hsr = normalized.map(f => f.code).join('# ');
+    }
+  }
+
+  let eventCode = 100;
+  let severity = 'INFO';
+  let desc = customDesc;
+
+  if (!isHealthy) {
+    if (shortFaults.length > 0) {
+      eventCode = 102;
+      severity = 'MAJOR';
+    } else {
+      eventCode = 103;
+      severity = 'MAJOR';
+    }
+    if (!desc) {
+      if (total === 1) {
+        desc = normalized[0].description;
+      } else {
+        desc = `Active LED Faults: ${shortFaults.length} SHORT, ${openFaults.length} OPEN (${hsr})`;
+      }
+    }
+  } else {
+    desc = desc || 'All LED pixels OK. Board healthy and functional.';
+  }
+
+  activeLedFaults = {
+    status: isHealthy ? 'HEALTHY' : 'FAULT',
+    hasFaults: !isHealthy,
+    eventCode,
+    eventSeverity: severity,
+    hsr,
+    faultDescription: desc,
+    summary: {
+      totalFaults: total,
+      shortCount: shortFaults.length,
+      openCount: openFaults.length,
+      healthy: isHealthy
+    },
+    shortFaults,
+    openFaults,
+    faults: normalized,
+    lastUpdated: new Date().toISOString()
+  };
+
+  return activeLedFaults;
+}
+
 // Helper: Get Primary Local IPv4 Address
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
@@ -406,6 +535,14 @@ app.post('/api/send-trap', async (req, res) => {
   try {
     const payload = req.body;
     const result = await sendSnmpv3Trap(payload);
+
+    // Update active fault state based on sent trap
+    if (payload.eventCode === 100 || payload.hsr === 'All OK') {
+      updateActiveFaults([], 'All OK', payload.faultDesc || 'All LED pixels OK. Board healthy and functional.');
+    } else if (payload.hsr) {
+      updateActiveFaults(payload.faults || [], payload.hsr, payload.faultDesc, payload.line || 1);
+    }
+
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -432,6 +569,7 @@ app.post('/api/send-preset', async (req, res) => {
       col: 0,
       faultDesc: req.body.faultDesc || 'All LED pixels OK. Board healthy and functional.'
     };
+    updateActiveFaults([], 'All OK', trapPayload.faultDesc, line);
   } else if (presetType === 'SHORT') {
     // 🔹 SHORT Circuit: EventCode 102
     trapPayload = {
@@ -443,6 +581,7 @@ app.post('/api/send-preset', async (req, res) => {
       col: col,
       faultDesc: req.body.faultDesc || `LED SHORT Circuit detected at Line ${line} Row ${row} Col ${col}`
     };
+    updateActiveFaults([{ line, row, col, type: 'SHORT' }], trapPayload.hsr, trapPayload.faultDesc, line);
   } else if (presetType === 'OPEN') {
     // 🔹 OPEN Circuit: EventCode 103
     trapPayload = {
@@ -454,6 +593,7 @@ app.post('/api/send-preset', async (req, res) => {
       col: col,
       faultDesc: req.body.faultDesc || `LED OPEN Circuit detected at Line ${line} Row ${row} Col ${col}`
     };
+    updateActiveFaults([{ line, row, col, type: 'OPEN' }], trapPayload.hsr, trapPayload.faultDesc, line);
   } else if (presetType === 'MATRIX_STATE') {
     // Dynamic Active Faults from Matrix
     const eventCode = parseInt(req.body.eventCode !== undefined ? req.body.eventCode : 102, 10);
@@ -482,6 +622,7 @@ app.post('/api/send-preset', async (req, res) => {
       col: mCol,
       faultDesc: faultDesc
     };
+    updateActiveFaults(req.body.faults || [], hsr, faultDesc, mLine);
   } else {
     return res.status(400).json({ error: 'Unknown preset type' });
   }
@@ -497,6 +638,102 @@ app.post('/api/send-preset', async (req, res) => {
 
   const result = await sendSnmpv3Trap(fullPayload);
   res.json({ success: true, preset: presetType, result });
+});
+
+// -------------------------------------------------------------
+// 🌟 SHAREABLE GET API: SEE LED SHORT & FAULT STATUS
+// Endpoint: GET /api/led-short (and aliases: /api/led-faults, /api/led-status, /api/faults)
+// -------------------------------------------------------------
+function handleGetLedFaults(req, res) {
+  const primaryIp = getLocalIp();
+  const boardInfo = {
+    vendor: config.vendor,
+    device: config.device,
+    ip: primaryIp || config.deviceIp,
+    dimensions: `${config.boardWidth}x${config.boardHeight}`,
+    platform: config.platform,
+    intensity: config.intensity,
+    line: config.line || 1
+  };
+
+  // 1. Raw HSR String Query: /api/led-short?raw=hsr
+  if (req.query.raw === 'hsr') {
+    return res.type('text/plain').send(activeLedFaults.hsr);
+  }
+
+  // 2. Filter by Type: ?type=short or ?type=open
+  let filteredFaults = [...activeLedFaults.faults];
+  const typeFilter = req.query.type ? req.query.type.toUpperCase() : null;
+  if (typeFilter) {
+    filteredFaults = filteredFaults.filter(f => f.type === typeFilter);
+  }
+
+  // 3. Filter by Coordinates: ?line=1&row=10&col=15
+  const qLine = req.query.line !== undefined ? parseInt(req.query.line, 10) : null;
+  const qRow = req.query.row !== undefined ? parseInt(req.query.row, 10) : null;
+  const qCol = req.query.col !== undefined ? parseInt(req.query.col, 10) : null;
+
+  if (qRow !== null && qCol !== null) {
+    filteredFaults = filteredFaults.filter(f => f.row === qRow && f.col === qCol && (qLine === null || f.line === qLine));
+  }
+
+  // 4. Sorting: ?sort=row | col | type
+  const sortBy = (req.query.sort || 'row').toLowerCase();
+  if (sortBy === 'col') {
+    filteredFaults.sort((a, b) => a.col - b.col || a.row - b.row);
+  } else if (sortBy === 'type') {
+    filteredFaults.sort((a, b) => a.type.localeCompare(b.type) || a.row - b.row);
+  } else {
+    // default row
+    filteredFaults.sort((a, b) => a.row - b.row || a.col - b.col);
+  }
+
+  // 5. Construct Clean, Shareable JSON Response
+  const responseData = {
+    status: activeLedFaults.status,
+    hasFaults: activeLedFaults.hasFaults,
+    message: activeLedFaults.faultDescription,
+    summary: {
+      totalFaults: activeLedFaults.summary.totalFaults,
+      shortCount: activeLedFaults.summary.shortCount,
+      openCount: activeLedFaults.summary.openCount,
+      healthy: activeLedFaults.summary.healthy
+    },
+    hsr: activeLedFaults.hsr,
+    eventCode: activeLedFaults.eventCode,
+    eventSeverity: activeLedFaults.eventSeverity,
+    shortFaults: activeLedFaults.shortFaults,
+    openFaults: activeLedFaults.openFaults,
+    faults: filteredFaults,
+    board: boardInfo,
+    timestamp: activeLedFaults.lastUpdated,
+    apiUrls: {
+      ledShortApi: `http://${primaryIp}:${PORT}/api/led-short`,
+      ledFaultsApi: `http://${primaryIp}:${PORT}/api/led-faults`,
+      filterShortOnly: `http://${primaryIp}:${PORT}/api/led-short?type=short`,
+      rawHsrString: `http://${primaryIp}:${PORT}/api/led-short?raw=hsr`
+    }
+  };
+
+  // Pretty-print JSON (2-space indent) for instant readability in web browsers and curl
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.send(JSON.stringify(responseData, null, 2));
+}
+
+// Register Primary & Alias GET Routes
+app.get('/api/led-short', handleGetLedFaults);
+app.get('/api/led-faults', handleGetLedFaults);
+app.get('/api/led-status', handleGetLedFaults);
+app.get('/api/faults', handleGetLedFaults);
+
+// Synchronize / Set Active Faults Directly (POST /api/led-faults)
+app.post('/api/led-faults', (req, res) => {
+  const faults = req.body.faults || [];
+  const hsr = req.body.hsr;
+  const desc = req.body.faultDesc;
+  const line = req.body.line || 1;
+  const updated = updateActiveFaults(faults, hsr, desc, line);
+  res.json({ success: true, message: 'LED faults synchronized', state: updated });
 });
 
 // 6. Get Trap Activity History
@@ -560,6 +797,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`================================================================`);
   console.log(`📡 Server running locally at:   http://localhost:${PORT}`);
   console.log(`📱 Wi-Fi / Phone access at:     http://${localIp}:${PORT}`);
+  console.log(`🔍 LED Short/Fault GET API:     http://${localIp}:${PORT}/api/led-short`);
   console.log(`🎯 Target NMS Destination:      ${config.nmsIp}:${config.nmsPort} (UDP)`);
   console.log(`🔐 SNMPv3 USM User:             ${config.usmUser} (authPriv HMAC-SHA-256 / AES-128)`);
   console.log(`🏷️ Trap Notification OID:       ${config.trapOid}`);

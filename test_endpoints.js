@@ -5,7 +5,13 @@ const http = require('http');
 
 function request(options, data = null) {
   return new Promise((resolve, reject) => {
-    const req = http.request(options, (res) => {
+    const payload = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : null;
+    const opts = { ...options };
+    if (payload) {
+      opts.headers = opts.headers || {};
+      opts.headers['Content-Length'] = Buffer.byteLength(payload);
+    }
+    const req = http.request(opts, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
@@ -17,8 +23,8 @@ function request(options, data = null) {
       });
     });
     req.on('error', reject);
-    if (data) {
-      req.write(typeof data === 'string' ? data : JSON.stringify(data));
+    if (payload) {
+      req.write(payload);
     }
     req.end();
   });
@@ -128,7 +134,72 @@ async function runTests() {
   console.log(`   Total Traps in History: ${histRes.data.total}`);
   console.assert(histRes.data.total >= 4, 'History should contain at least 4 entries');
 
-  console.log('\n🎉 ALL 7 END-TO-END TESTS PASSED SUCCESSFULLY! 🚀\n');
+  // Test 8: Shareable GET API - Check LED Short / Faults State
+  console.log('\n8️⃣ Testing GET /api/led-short (Normal GET API for LED Faults)...');
+  const ledRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/led-short',
+    method: 'GET'
+  });
+  console.log(`   Status: ${ledRes.status}`);
+  console.log(`   Board Status: ${ledRes.data.status}`);
+  console.log(`   Has Faults: ${ledRes.data.hasFaults}`);
+  console.log(`   Total Faults: ${ledRes.data.summary.totalFaults}`);
+  console.log(`   Short Count: ${ledRes.data.summary.shortCount}`);
+  console.log(`   HSR: "${ledRes.data.hsr}"`);
+  console.log(`   Event Code: ${ledRes.data.eventCode}`);
+  console.assert(ledRes.status === 200, 'GET /api/led-short status should be 200');
+  console.assert(ledRes.data.hasFaults === true, 'hasFaults should be true after multi-fault');
+  console.assert(Array.isArray(ledRes.data.shortFaults), 'shortFaults should be an array');
+  console.assert(Array.isArray(ledRes.data.faults), 'faults should be an array');
+
+  // Test 9: Shareable GET API with Query Filters & Raw HSR
+  console.log('\n9️⃣ Testing GET /api/led-short?type=short and ?raw=hsr...');
+  const shortOnlyRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/led-short?type=short',
+    method: 'GET'
+  });
+  console.log(`   Filtered SHORT faults count: ${shortOnlyRes.data.faults.length}`);
+  console.assert(shortOnlyRes.data.faults.every(f => f.type === 'SHORT'), 'All filtered faults must be SHORT');
+
+  const rawHsrRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/led-short?raw=hsr',
+    method: 'GET'
+  });
+  console.log(`   Raw HSR Output: "${rawHsrRes.body}"`);
+  console.assert(rawHsrRes.status === 200, 'Raw HSR status should be 200');
+
+  // Test 10: Clear / Healthy Transition verified on GET /api/led-short
+  console.log('\n🔟 Testing Clear Trap and verifying GET /api/led-short returns HEALTHY...');
+  await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/send-preset',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { presetType: 'CLEAR' });
+
+  const healthyRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/led-short',
+    method: 'GET'
+  });
+  console.log(`   Board Status: ${healthyRes.data.status}`);
+  console.log(`   Has Faults: ${healthyRes.data.hasFaults}`);
+  console.log(`   Summary Healthy: ${healthyRes.data.summary.healthy}`);
+  console.log(`   HSR: "${healthyRes.data.hsr}"`);
+  console.assert(healthyRes.data.status === 'HEALTHY', 'Status should be HEALTHY');
+  console.assert(healthyRes.data.hasFaults === false, 'hasFaults should be false');
+  console.assert(healthyRes.data.summary.totalFaults === 0, 'totalFaults should be 0');
+  console.assert(healthyRes.data.hsr === 'All OK', 'HSR should be All OK');
+
+  console.log('\n🎉 ALL 10 END-TO-END TESTS (INCLUDING LED SHORT GET API) PASSED SUCCESSFULLY! 🚀\n');
 }
 
 runTests().catch(err => {

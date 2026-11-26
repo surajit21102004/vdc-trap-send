@@ -43,6 +43,10 @@
     </div>
 
     <div class="header-right">
+      <button class="btn-action btn-api" id="btnOpenApiModal" title="Share LED Faults GET API">
+        <span class="icon">🔗</span>
+        <span class="btn-text">Share GET API</span>
+      </button>
       <button class="btn-action btn-phone" id="btnPhoneConnect" title="Connect Phone via Wi-Fi">
         <span class="icon">📱</span>
         <span class="btn-text">Phone Wi-Fi QR</span>
@@ -255,7 +259,12 @@
         <div class="output-box json-box">
           <div class="output-header">
             <span class="tag">SPECIFICATION JSON PAYLOAD</span>
-            <button class="btn-copy-json" id="btnCopyJson" title="Copy JSON">📋 Copy JSON</button>
+            <div class="output-header-actions">
+              <a href="/api/led-short" target="_blank" class="btn-direct-api-link" id="directApiBadge" title="Open GET /api/led-short in new tab">
+                🔗 GET /api/led-short
+              </a>
+              <button class="btn-copy-json" id="btnCopyJson" title="Copy JSON">📋 Copy JSON</button>
+            </div>
           </div>
           <pre class="json-code" id="liveJsonPayload">{
   "vendor": "Topgrip",
@@ -447,6 +456,84 @@
             <button type="submit" class="btn-primary" id="btnSaveSettings">Save & Apply Changes</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: SHAREABLE LED FAULTS / SHORT CIRCUIT GET API -->
+  <!-- ============================================================== -->
+  <div class="modal-backdrop" id="apiModalBackdrop">
+    <div class="modal-box modal-api">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="icon">🔗</span>
+          <h3>Shareable LED Faults GET API</h3>
+        </div>
+        <button class="btn-close-modal" id="btnCloseApiModal">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-lead">
+          Share this standard HTTP GET API with colleagues, team members, or monitoring systems to see which LEDs are currently faulty / shorted in real-time:
+        </p>
+
+        <!-- Primary URL Card -->
+        <div class="api-card-highlight">
+          <div class="api-card-top">
+            <span class="api-method-badge">GET</span>
+            <span class="api-card-title">Primary LED Short / Faults API</span>
+          </div>
+          <div class="api-url-display-row">
+            <div class="api-url-text" id="apiShortUrlText">http://localhost:8080/api/led-short</div>
+            <div class="api-card-buttons">
+              <button class="btn-action-sm btn-copy-url" id="btnCopyApiUrl" title="Copy GET API URL">
+                📋 Copy Link
+              </button>
+              <a id="btnOpenApiInTab" href="/api/led-short" target="_blank" class="btn-action-sm btn-open-tab" title="Open GET API in new tab">
+                🌐 Open
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Available URL Endpoints -->
+        <div class="api-endpoints-subgrid">
+          <div class="api-sub-item">
+            <span class="sub-label">All Faults URL:</span>
+            <code id="apiFaultsUrlText">http://localhost:8080/api/led-faults</code>
+          </div>
+          <div class="api-sub-item">
+            <span class="sub-label">Filter SHORT Only:</span>
+            <code id="apiShortOnlyUrlText">http://localhost:8080/api/led-short?type=short</code>
+          </div>
+          <div class="api-sub-item">
+            <span class="sub-label">Raw HSR String:</span>
+            <code id="apiRawHsrUrlText">http://localhost:8080/api/led-short?raw=hsr</code>
+          </div>
+          <div class="api-sub-item">
+            <span class="sub-label">Specific Diode (L1 R10 C15):</span>
+            <code id="apiCoordCheckUrlText">http://localhost:8080/api/led-short?row=10&col=15</code>
+          </div>
+        </div>
+
+        <!-- cURL Terminal Command Box -->
+        <div class="curl-snippet-box">
+          <div class="curl-snippet-header">
+            <span class="curl-label">Terminal / cURL Command:</span>
+            <button class="btn-action-sm btn-copy-curl" id="btnCopyCurlCmd">📋 Copy Command</button>
+          </div>
+          <code class="curl-code" id="curlCommandText">curl -s http://localhost:8080/api/led-short</code>
+        </div>
+
+        <!-- Live Response Preview Section -->
+        <div class="api-preview-section">
+          <div class="api-preview-header">
+            <span class="preview-title">🟢 Real-Time API JSON Response:</span>
+            <button class="btn-action-sm btn-refresh-preview" id="btnRefreshApiPreview">🔄 Live Refresh</button>
+          </div>
+          <pre class="api-preview-code" id="apiLivePreviewCode">Loading live response...</pre>
+        </div>
       </div>
     </div>
   </div>
