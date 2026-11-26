@@ -174,6 +174,31 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def get_all_network_ips():
+    addresses = []
+    try:
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if not ip.startswith("127."):
+                name = "Ethernet (LAN)" if ip.startswith("10.") else ("Wi-Fi" if ip.startswith("192.168.") else "LAN Interface")
+                addresses.append({
+                    "name": name,
+                    "ip": ip,
+                    "internal": False,
+                    "url": f"http://{ip}:{PORT}"
+                })
+    except Exception:
+        pass
+    if not addresses:
+        local_ip = get_local_ip()
+        addresses.append({
+            "name": "Primary Interface",
+            "ip": local_ip,
+            "internal": False,
+            "url": f"http://{local_ip}:{PORT}"
+        })
+    return addresses
+
 CONFIG["deviceIp"] = get_local_ip()
 
 def build_13_varbinds(params):
@@ -289,11 +314,12 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
+            all_ips = get_all_network_ips()
             data = {
                 "primaryIp": local_ip,
                 "port": PORT,
                 "primaryUrl": f"http://{local_ip}:{PORT}",
-                "allIps": [{"name": "Ethernet/WiFi", "ip": local_ip, "internal": False, "url": f"http://{local_ip}:{PORT}"}],
+                "allIps": all_ips,
                 "config": CONFIG
             }
             self.wfile.write(json.dumps(data).encode("utf-8"))
@@ -365,6 +391,7 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "apiUrls": {
                     "ledShortApi": f"http://{local_ip}:{PORT}/api/led-short",
                     "ledFaultsApi": f"http://{local_ip}:{PORT}/api/led-faults",
+                    "allHostIps": [{"interface": i["name"], "ip": i["ip"], "apiUrl": f"http://{i['ip']}:{PORT}/api/led-short", "webUrl": f"http://{i['ip']}:{PORT}"} for i in get_all_network_ips()],
                     "filterShortOnly": f"http://{local_ip}:{PORT}/api/led-short?type=short",
                     "rawHsrString": f"http://{local_ip}:{PORT}/api/led-short?raw=hsr"
                 }

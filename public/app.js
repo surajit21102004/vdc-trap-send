@@ -114,6 +114,8 @@
   const btnOpenApiInTab = document.getElementById('btnOpenApiInTab');
   const btnCopyCurlCmd = document.getElementById('btnCopyCurlCmd');
   const btnRefreshApiPreview = document.getElementById('btnRefreshApiPreview');
+  const selectApiInterface = document.getElementById('selectApiInterface');
+  let networkInterfaces = [];
 
   const headerNmsTarget = document.getElementById('headerNmsTarget');
   const headerBoardType = document.getElementById('headerBoardType');
@@ -815,13 +817,63 @@
       qrUrlLink.textContent = data.primaryUrl;
       qrUrlLink.href = data.primaryUrl;
 
+      if (Array.isArray(data.allIps)) {
+        networkInterfaces = data.allIps.filter(i => !i.internal);
+        populateInterfaceSelector();
+      }
+
       networkInterfacesList.innerHTML = data.allIps.map(iface => `
-        <div class="iface-item">
+        <div class="iface-item" style="cursor: pointer;" title="Click to use this IP" onclick="window.switchActiveNetworkIp('${iface.ip}', '${iface.url}')">
           <span>${iface.name}</span>
           <strong>${iface.url}</strong>
         </div>
       `).join('');
     } catch (e) { }
+  }
+
+  window.switchActiveNetworkIp = function(ip, url) {
+    if (qrUrlLink) {
+      qrUrlLink.textContent = url;
+      qrUrlLink.href = url;
+    }
+    if (selectApiInterface) {
+      selectApiInterface.value = ip;
+      updateApiModalUrls();
+    }
+    showToast(`Switched active host IP to: ${ip}`, 'info');
+  };
+
+  function populateInterfaceSelector() {
+    if (!selectApiInterface) return;
+    const currentVal = selectApiInterface.value;
+    selectApiInterface.innerHTML = '';
+
+    networkInterfaces.forEach(iface => {
+      const opt = document.createElement('option');
+      opt.value = iface.ip;
+      opt.textContent = `${iface.name}: ${iface.ip} (Port ${state.config.port || 8080})`;
+      selectApiInterface.appendChild(opt);
+    });
+
+    const localOpt = document.createElement('option');
+    localOpt.value = 'localhost';
+    localOpt.textContent = `Localhost (127.0.0.1:8080)`;
+    selectApiInterface.appendChild(localOpt);
+
+    if (currentVal && Array.from(selectApiInterface.options).some(o => o.value === currentVal)) {
+      selectApiInterface.value = currentVal;
+    } else if (networkInterfaces.length > 0) {
+      selectApiInterface.value = networkInterfaces[0].ip;
+    }
+  }
+
+  function getSelectedHostUrl() {
+    if (selectApiInterface && selectApiInterface.value && selectApiInterface.value !== 'auto') {
+      const port = state.config.port || 8080;
+      const host = selectApiInterface.value === 'localhost' ? 'localhost' : selectApiInterface.value;
+      return `http://${host}:${port}`;
+    }
+    return window.location.origin;
   }
 
   async function fetchConfig() {
@@ -921,15 +973,15 @@
   }
 
   function updateApiModalUrls() {
-    const origin = window.location.origin;
-    const shortUrl = `${origin}/api/led-short`;
-    const faultsUrl = `${origin}/api/led-faults`;
-    const shortOnlyUrl = `${origin}/api/led-short?type=short`;
-    const rawHsrUrl = `${origin}/api/led-short?raw=hsr`;
+    const baseUrl = getSelectedHostUrl();
+    const shortUrl = `${baseUrl}/api/led-short`;
+    const faultsUrl = `${baseUrl}/api/led-faults`;
+    const shortOnlyUrl = `${baseUrl}/api/led-short?type=short`;
+    const rawHsrUrl = `${baseUrl}/api/led-short?raw=hsr`;
     const l = parseInt(inputLine.value, 10) || 1;
     const r = parseInt(inputRow.value, 10) || 10;
     const c = parseInt(inputCol.value, 10) || 15;
-    const coordUrl = `${origin}/api/led-short?line=${l}&row=${r}&col=${c}`;
+    const coordUrl = `${baseUrl}/api/led-short?line=${l}&row=${r}&col=${c}`;
     const curlCmd = `curl -s ${shortUrl}`;
 
     if (apiShortUrlText) apiShortUrlText.textContent = shortUrl;
@@ -939,6 +991,13 @@
     if (apiCoordCheckUrlText) apiCoordCheckUrlText.textContent = coordUrl;
     if (curlCommandText) curlCommandText.textContent = curlCmd;
     if (btnOpenApiInTab) btnOpenApiInTab.href = shortUrl;
+  }
+
+  if (selectApiInterface) {
+    selectApiInterface.addEventListener('change', () => {
+      updateApiModalUrls();
+      showToast(`Switched API link to: ${selectApiInterface.value}`, 'info');
+    });
   }
 
   if (btnOpenApiModal) {

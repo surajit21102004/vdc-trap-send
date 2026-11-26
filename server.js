@@ -689,6 +689,14 @@ function handleGetLedFaults(req, res) {
   }
 
   // 5. Construct Clean, Shareable JSON Response
+  const allIps = getAllNetworkIps().filter(i => !i.internal);
+  const hostIpsList = allIps.map(i => ({
+    interface: i.name,
+    ip: i.ip,
+    apiUrl: `http://${i.ip}:${PORT}/api/led-short`,
+    webUrl: `http://${i.ip}:${PORT}`
+  }));
+
   const responseData = {
     status: activeLedFaults.status,
     hasFaults: activeLedFaults.hasFaults,
@@ -710,6 +718,7 @@ function handleGetLedFaults(req, res) {
     apiUrls: {
       ledShortApi: `http://${primaryIp}:${PORT}/api/led-short`,
       ledFaultsApi: `http://${primaryIp}:${PORT}/api/led-faults`,
+      allHostIps: hostIpsList,
       filterShortOnly: `http://${primaryIp}:${PORT}/api/led-short?type=short`,
       rawHsrString: `http://${primaryIp}:${PORT}/api/led-short?raw=hsr`
     }
