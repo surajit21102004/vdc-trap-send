@@ -253,15 +253,28 @@ def update_active_faults(new_faults=None, custom_hsr=None, custom_desc=None, def
 
     return ACTIVE_LED_FAULTS
 
-def get_local_ip():
+def get_wifi_ip():
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if ip.startswith("192.168."):
+                return ip
     except Exception:
-        return "127.0.0.1"
+        pass
+    return None
+
+def get_ethernet_ip():
+    try:
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if ip.startswith("10."):
+                return ip
+    except Exception:
+        pass
+    return None
+
+def get_local_ip():
+    return get_wifi_ip() or get_ethernet_ip() or "127.0.0.1"
 
 def get_all_network_ips():
     addresses = []
@@ -648,16 +661,23 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
 if __name__ == "__main__":
-    local_ip = get_local_ip()
+    wifi_ip = get_wifi_ip()
+    eth_ip = get_ethernet_ip()
+    primary_ip = wifi_ip or eth_ip or "127.0.0.1"
+    print("\n" + "=" * 64)
+    print("🚆 TOPGRIP IPIS / VDC AVDB (192x112) SNMPv3 TRAP CONTROLLER (Python)")
     print("=" * 64)
-    print(f"🚆 TOPGRIP IPIS / VDC AVDB (192x112) SNMPv3 TRAP CONTROLLER (Python)")
-    print("=" * 64)
-    print(f"📡 Local Web URL:       http://localhost:{PORT}")
-    print(f"📱 Phone / Wi-Fi URL:   http://{local_ip}:{PORT}")
-    print(f"🔍 LED Short/Fault API: http://{local_ip}:{PORT}/api/led-short")
-    print(f"🎯 Target NMS:          {CONFIG['nmsIp']}:{CONFIG['nmsPort']} (UDP)")
-    print(f"🔐 SNMPv3 User:         {CONFIG['usmUser']} (authPriv)")
-    print("=" * 64)
+    print(f"📡 Local PC Access:          http://localhost:{PORT}")
+    if wifi_ip:
+        print(f"📱 Wi-Fi / Phone Access:     http://{wifi_ip}:{PORT}  (Scan QR on same Wi-Fi)")
+    if eth_ip:
+        print(f"🔌 Ethernet / Device Access: http://{eth_ip}:{PORT}   (IPIS / NMS Network)")
+    print(f"🔍 LED Short/Fault GET API:  http://{primary_ip}:{PORT}/api/led-short")
+    if ACTIVE_FAULT_FILE_PATH:
+        print(f"💾 Disk Fault Auto-Save:     {ACTIVE_FAULT_FILE_PATH}")
+    print(f"🎯 Target NMS Destination:   {CONFIG['nmsIp']}:{CONFIG['nmsPort']} (UDP)")
+    print(f"🔐 SNMPv3 USM User:          {CONFIG['usmUser']} (authPriv)")
+    print("=" * 64 + "\n")
     with socketserver.TCPServer(("0.0.0.0", PORT), IpisRequestHandler) as httpd:
         try:
             httpd.serve_forever()

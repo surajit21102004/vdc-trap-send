@@ -286,17 +286,57 @@ function updateActiveFaults(newFaults, customHsr, customDesc, defaultLine = 1) {
   return activeLedFaults;
 }
 
-// Helper: Get Primary Local IPv4 Address
-function getLocalIp() {
+// Helper: Get Wi-Fi IPv4 Address (specifically for Phone / Wireless access on same router)
+function getWifiIp() {
   const interfaces = os.networkInterfaces();
+  // 1. Check for interface with wifi, wlan, wireless in name
+  for (const name of Object.keys(interfaces)) {
+    const lower = name.toLowerCase();
+    if (lower.includes('wi-fi') || lower.includes('wifi') || lower.includes('wlan') || lower.includes('wireless')) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+  }
+  // 2. Check for typical Wi-Fi subnets 192.168.x.x
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
+      if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168.')) {
         return iface.address;
       }
     }
   }
-  return '127.0.0.1';
+  return null;
+}
+
+// Helper: Get Ethernet / Device LAN IPv4 Address (e.g. for Topgrip / NMS equipment)
+function getEthernetIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    const lower = name.toLowerCase();
+    if (lower.includes('ethernet') || lower.includes('eth') || lower.includes('lan')) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+  }
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('10.')) {
+        return iface.address;
+      }
+    }
+  }
+  return null;
+}
+
+// Helper: Get Primary Local IPv4 Address (Wi-Fi preferred for wireless web access)
+function getLocalIp() {
+  return getWifiIp() || getEthernetIp() || '127.0.0.1';
 }
 
 // Helper: Get All Available Network Interfaces
@@ -305,9 +345,17 @@ function getAllNetworkIps() {
   const addresses = [];
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4') {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        const lower = name.toLowerCase();
+        let typeName = 'LAN Interface';
+        if (lower.includes('wi-fi') || lower.includes('wifi') || lower.includes('wlan') || iface.address.startsWith('192.168.')) {
+          typeName = 'Wi-Fi (Phone / Wireless)';
+        } else if (lower.includes('ethernet') || lower.includes('eth') || iface.address.startsWith('10.')) {
+          typeName = 'Ethernet (NMS / Device)';
+        }
         addresses.push({
-          name: name,
+          name: `${name} (${typeName})`,
+          rawName: name,
           ip: iface.address,
           internal: iface.internal,
           url: `http://${iface.address}:${PORT}`
@@ -592,7 +640,9 @@ function sendSnmpv3Trap(trapPayload) {
 
 // 1. Get Network Info & QR Code
 app.get('/api/network-info', async (req, res) => {
-  const primaryIp = getLocalIp();
+  const wifiIp = getWifiIp();
+  const ethernetIp = getEthernetIp();
+  const primaryIp = wifiIp || ethernetIp || getLocalIp();
   const allIps = getAllNetworkIps();
   const primaryUrl = `http://${primaryIp}:${PORT}`;
 
@@ -608,11 +658,17 @@ app.get('/api/network-info', async (req, res) => {
 
     res.json({
       primaryIp,
+      wifiIp,
+      ethernetIp,
       port: PORT,
       primaryUrl,
       allIps,
       qrDataUrl,
-      config
+      config,
+      diskStorage: {
+        folder: activeFaultFolder,
+        filePath: activeFaultFilePath
+      }
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to generate QR code', details: err.message });
@@ -934,16 +990,27 @@ app.post('/api/auto-test', async (req, res) => {
 
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
-  const localIp = getLocalIp();
+  const wifiIp = getWifiIp();
+  const ethIp = getEthernetIp();
+  const primaryIp = wifiIp || ethIp || '127.0.0.1';
+
   console.log(`\n================================================================`);
   console.log(`🚆 TOPGRIP IPIS / VDC AVDB (192x112) SNMPv3 TRAP CONTROLLER`);
   console.log(`================================================================`);
-  console.log(`📡 Server running locally at:   http://localhost:${PORT}`);
-  console.log(`📱 Wi-Fi / Phone access at:     http://${localIp}:${PORT}`);
-  console.log(`🔍 LED Short/Fault GET API:     http://${localIp}:${PORT}/api/led-short`);
-  console.log(`🎯 Target NMS Destination:      ${config.nmsIp}:${config.nmsPort} (UDP)`);
-  console.log(`🔐 SNMPv3 USM User:             ${config.usmUser} (authPriv HMAC-SHA-256 / AES-128)`);
-  console.log(`🏷️ Trap Notification OID:       ${config.trapOid}`);
-  console.log(`📺 Board Simulation:            ${config.device} (${config.boardWidth}x${config.boardHeight})`);
+  console.log(`📡 Local PC Access:          http://localhost:${PORT}`);
+  if (wifiIp) {
+    console.log(`📱 Wi-Fi / Phone Access:     http://${wifiIp}:${PORT}  (Scan QR on same Wi-Fi)`);
+  }
+  if (ethIp) {
+    console.log(`🔌 Ethernet / Device Access: http://${ethIp}:${PORT}   (IPIS / NMS Network)`);
+  }
+  console.log(`🔍 LED Short/Fault GET API:  http://${primaryIp}:${PORT}/api/led-short`);
+  if (activeFaultFilePath) {
+    console.log(`💾 Disk Fault Auto-Save:     ${activeFaultFilePath}`);
+  }
+  console.log(`🎯 Target NMS Destination:   ${config.nmsIp}:${config.nmsPort} (UDP)`);
+  console.log(`🔐 SNMPv3 USM User:          ${config.usmUser} (authPriv HMAC-SHA-256 / AES-128)`);
+  console.log(`🏷️ Trap Notification OID:    ${config.trapOid}`);
+  console.log(`📺 Board Simulation:         ${config.device} (${config.boardWidth}x${config.boardHeight})`);
   console.log(`================================================================\n`);
 });
