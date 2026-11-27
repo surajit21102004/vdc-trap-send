@@ -10,6 +10,7 @@ const express = require('express');
 const snmp = require('net-snmp');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const QRCode = require('qrcode');
 const dgram = require('dgram');
 
@@ -52,6 +53,101 @@ let config = {
 const trapHistory = [];
 const MAX_HISTORY = 100;
 
+// =============================================================
+// DISK FAULT STORAGE SYSTEM (D:\fault\fault.json or C:\fault\fault.json)
+// =============================================================
+let activeFaultFolder = null;
+let activeFaultFilePath = null;
+
+function resolveFaultDirectory() {
+  const candidates = [
+    'D:\\fault',
+    'C:\\fault',
+    path.join(__dirname, 'fault')
+  ];
+
+  for (const dir of candidates) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      // Test write capability
+      const testFile = path.join(dir, `.test_write_${Date.now()}.tmp`);
+      fs.writeFileSync(testFile, 'ok', 'utf-8');
+      fs.unlinkSync(testFile);
+      activeFaultFolder = dir;
+      activeFaultFilePath = path.join(dir, 'fault.json');
+      console.log(`📁 [DISK STORAGE] Fault JSON storage active at: ${activeFaultFilePath}`);
+      return dir;
+    } catch (err) {
+      console.warn(`[DISK STORAGE] Cannot write to ${dir} (${err.message}). Trying fallback...`);
+    }
+  }
+
+  // Final fallback to workspace directory
+  const localDir = path.join(__dirname, 'fault');
+  try {
+    fs.mkdirSync(localDir, { recursive: true });
+  } catch (e) { }
+  activeFaultFolder = localDir;
+  activeFaultFilePath = path.join(localDir, 'fault.json');
+  return localDir;
+}
+
+function saveFaultJsonToDisk(state) {
+  try {
+    if (!activeFaultFolder || !activeFaultFilePath) {
+      resolveFaultDirectory();
+    }
+
+    const totalFaults = (state && state.summary && typeof state.summary.totalFaults === 'number')
+      ? state.summary.totalFaults
+      : (state && Array.isArray(state.faults) ? state.faults.length : 0);
+
+    const shortCount = (state && state.summary && typeof state.summary.shortCount === 'number')
+      ? state.summary.shortCount
+      : (state && Array.isArray(state.shortFaults) ? state.shortFaults.length : 0);
+
+    const openCount = (state && state.summary && typeof state.summary.openCount === 'number')
+      ? state.summary.openCount
+      : (state && Array.isArray(state.openFaults) ? state.openFaults.length : 0);
+
+    const isHealthy = totalFaults === 0;
+
+    // Schema matching user request:
+    // { fault: "total", okay: "all okay", short: "1", open: "1" }
+    const faultJsonPayload = {
+      fault: String(totalFaults),
+      okay: isHealthy ? 'all okay' : 'fault detected',
+      short: String(shortCount),
+      open: String(openCount),
+      total: totalFaults,
+      status: isHealthy ? 'HEALTHY' : 'FAULT',
+      hsr: (state && state.hsr) ? state.hsr : (isHealthy ? 'All OK' : ''),
+      eventCode: (state && state.eventCode) ? state.eventCode : (isHealthy ? 100 : 102),
+      severity: (state && state.eventSeverity) ? state.eventSeverity : (isHealthy ? 'INFO' : 'MAJOR'),
+      description: (state && state.faultDescription) ? state.faultDescription : (isHealthy ? 'All LED pixels OK. Board healthy and functional.' : 'Fault detected'),
+      shortFaults: (state && state.shortFaults) ? state.shortFaults : [],
+      openFaults: (state && state.openFaults) ? state.openFaults : [],
+      faults: (state && state.faults) ? state.faults : [],
+      filePath: activeFaultFilePath,
+      lastUpdated: new Date().toISOString()
+    };
+
+    // Save fault.json
+    fs.writeFileSync(activeFaultFilePath, JSON.stringify(faultJsonPayload, null, 2), 'utf-8');
+
+    // Also write alias fault_status.json
+    const aliasPath = path.join(activeFaultFolder, 'fault_status.json');
+    fs.writeFileSync(aliasPath, JSON.stringify(faultJsonPayload, null, 2), 'utf-8');
+
+    return { success: true, folder: activeFaultFolder, filePath: activeFaultFilePath, data: faultJsonPayload };
+  } catch (err) {
+    console.error(`[DISK STORAGE ERROR] Failed to write fault JSON:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 // Active LED Faults State (Server In-Memory Cache for GET APIs)
 let activeLedFaults = {
   status: 'HEALTHY',
@@ -71,6 +167,12 @@ let activeLedFaults = {
   faults: [],
   lastUpdated: new Date().toISOString()
 };
+
+// Initialize fault JSON file on disk immediately on startup
+try {
+  resolveFaultDirectory();
+  saveFaultJsonToDisk(activeLedFaults);
+} catch (e) { }
 
 // Helper: Parse HSR string (e.g. "S-L1R10C15# O-L1R10C16") into structured fault objects
 function parseHsrToFaults(hsr, defaultLine = 1) {
@@ -177,6 +279,9 @@ function updateActiveFaults(newFaults, customHsr, customDesc, defaultLine = 1) {
     faults: normalized,
     lastUpdated: new Date().toISOString()
   };
+
+  // Sync to disk fault JSON file (D:\fault\fault.json or C:\fault\fault.json)
+  saveFaultJsonToDisk(activeLedFaults);
 
   return activeLedFaults;
 }
@@ -721,6 +826,10 @@ function handleGetLedFaults(req, res) {
       allHostIps: hostIpsList,
       filterShortOnly: `http://${primaryIp}:${PORT}/api/led-short?type=short`,
       rawHsrString: `http://${primaryIp}:${PORT}/api/led-short?raw=hsr`
+    },
+    diskStorage: {
+      folder: activeFaultFolder,
+      filePath: activeFaultFilePath
     }
   };
 
@@ -743,6 +852,31 @@ app.post('/api/led-faults', (req, res) => {
   const line = req.body.line || 1;
   const updated = updateActiveFaults(faults, hsr, desc, line);
   res.json({ success: true, message: 'LED faults synchronized', state: updated });
+});
+
+// Read Disk Fault JSON File Info & Contents (GET /api/fault-file)
+app.get('/api/fault-file', (req, res) => {
+  try {
+    if (activeFaultFilePath && fs.existsSync(activeFaultFilePath)) {
+      const fileRaw = fs.readFileSync(activeFaultFilePath, 'utf-8');
+      const data = JSON.parse(fileRaw);
+      res.json({
+        success: true,
+        folder: activeFaultFolder,
+        filePath: activeFaultFilePath,
+        data: data
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'Fault file not yet created on disk',
+        folder: activeFaultFolder,
+        filePath: activeFaultFilePath
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 6. Get Trap Activity History

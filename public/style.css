@@ -1750,6 +1750,110 @@ body {
   word-break: break-all;
 }
 
+/* ==========================================================================
+   DISK FAULT STORAGE STYLES (D:\fault\fault.json)
+   ========================================================================== */
+.alarm-disk-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.alarm-disk-info .disk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.alarm-disk-info strong {
+  color: #38bdf8;
+  font-family: var(--font-mono);
+}
+
+.disk-file-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.disk-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.disk-file-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #f1f5f9;
+}
+
+.disk-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.disk-file-path-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #020617;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #1e293b;
+  margin-bottom: 6px;
+}
+
+.disk-file-path {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: #38bdf8;
+  word-break: break-all;
+  font-weight: 600;
+}
+
+.btn-copy-disk-path {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.btn-copy-disk-path:hover {
+  background: rgba(59, 130, 246, 0.35);
+  color: #ffffff;
+  border-color: #60a5fa;
+}
+
+.disk-file-hint {
+  font-size: 11px;
+  color: #64748b;
+  display: block;
+}
+
+.disk-file-hint code {
+  color: #a5f3fc;
+  font-family: var(--font-mono);
+}
+
 .api-preview-section {
   background: #060a12;
   border: 1px solid #1e293b;

@@ -117,6 +117,11 @@
   const selectApiInterface = document.getElementById('selectApiInterface');
   let networkInterfaces = [];
 
+  // Disk File Storage Indicators
+  const alarmDiskFileDisplay = document.getElementById('alarmDiskFileDisplay');
+  const diskFilePathDisplay = document.getElementById('diskFilePathDisplay');
+  const btnCopyDiskPath = document.getElementById('btnCopyDiskPath');
+
   const headerNmsTarget = document.getElementById('headerNmsTarget');
   const headerBoardType = document.getElementById('headerBoardType');
 
@@ -128,6 +133,7 @@
     await fetchConfig();
     await fetchHistory();
     await fetchActiveFaults();
+    await fetchFaultFileInfo();
     updateHsrAndJson();
     renderMatrix();
     updateVarbindTable();
@@ -152,6 +158,17 @@
             type: f.type || 'SHORT'
           });
         }
+      }
+    } catch (e) { }
+  }
+
+  async function fetchFaultFileInfo() {
+    try {
+      const res = await fetch('/api/fault-file');
+      const data = await res.json();
+      if (data && data.filePath) {
+        if (alarmDiskFileDisplay) alarmDiskFileDisplay.textContent = data.filePath;
+        if (diskFilePathDisplay) diskFilePathDisplay.textContent = data.filePath;
       }
     } catch (e) { }
   }
@@ -1036,6 +1053,15 @@
     btnRefreshApiPreview.addEventListener('click', () => {
       fetchApiLivePreview();
       showToast('Live API response refreshed', 'info');
+    });
+  }
+
+  if (btnCopyDiskPath) {
+    btnCopyDiskPath.addEventListener('click', () => {
+      const p = diskFilePathDisplay ? diskFilePathDisplay.textContent : 'D:\\fault\\fault.json';
+      navigator.clipboard.writeText(p).then(() => {
+        showToast('📁 Disk JSON file path copied to clipboard!', 'success');
+      });
     });
   }
 

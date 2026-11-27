@@ -74,6 +74,10 @@
             </div>
             <p class="alarm-status-desc" id="alarmStatusDesc">All LED pixels are operational. Traps stay active in NMS
               until the Clear Trap button is clicked.</p>
+            <div class="alarm-disk-info">
+              <span class="disk-dot"></span>
+              <span class="disk-text">Auto-Saved Disk File: <strong id="alarmDiskFileDisplay">D:\fault\fault.json</strong></span>
+            </div>
           </div>
         </div>
         <div class="alarm-status-action">
@@ -535,6 +539,24 @@
             <button class="btn-action-sm btn-copy-curl" id="btnCopyCurlCmd">📋 Copy Command</button>
           </div>
           <code class="curl-code" id="curlCommandText">curl -s http://localhost:8080/api/led-short</code>
+        </div>
+
+        <!-- LOCAL DISK AUTO-SYNC FILE CARD -->
+        <div class="disk-file-card">
+          <div class="disk-file-header">
+            <div class="disk-file-title">
+              <span class="icon">💾</span>
+              <strong>Disk Fault JSON Storage:</strong>
+            </div>
+            <span class="disk-badge" id="diskBadgeStatus">🟢 D:\ DRIVE ACTIVE</span>
+          </div>
+          <div class="disk-file-path-row">
+            <code class="disk-file-path" id="diskFilePathDisplay">D:\fault\fault.json</code>
+            <button class="btn-action-sm btn-copy-disk-path" id="btnCopyDiskPath" title="Copy Disk Path">
+              📋 Copy Path
+            </button>
+          </div>
+          <div class="disk-file-hint">Automatically saves <code>{ "fault": "...", "okay": "...", "short": "...", "open": "..." }</code> whenever any fault occurs or clears.</div>
         </div>
 
         <!-- Live Response Preview Section -->

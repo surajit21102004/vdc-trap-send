@@ -178,3 +178,73 @@ curl -s http://localhost:8080/api/led-short
 | `?raw=hsr` | Return just the raw HSR string (`S-L1R10C15` or `All OK`) | `/api/led-short?raw=hsr` |
 | `?sort=col` | Sort faults by column instead of row | `/api/led-short?sort=col` |
 
+---
+
+## 💾 Local Disk Auto-Save (`D:\fault\fault.json` / `C:\fault\fault.json`)
+
+Whenever any fault, short circuit, or clear action occurs, the system automatically checks for available disk storage and writes the live status directly to a JSON file:
+
+1. **Target Directory**: `D:\fault\` (If `D:\` is not available, falls back to `C:\fault\` or `./fault/`).
+2. **File Path**: `D:\fault\fault.json` *(and `D:\fault\fault_status.json`)*.
+
+### 📄 File Schema (When Healthy):
+```json
+{
+  "fault": "0",
+  "okay": "all okay",
+  "short": "0",
+  "open": "0",
+  "total": 0,
+  "status": "HEALTHY",
+  "hsr": "All OK",
+  "eventCode": 100,
+  "severity": "INFO",
+  "description": "All LED pixels OK. Board healthy and functional.",
+  "shortFaults": [],
+  "openFaults": [],
+  "faults": [],
+  "filePath": "D:\\fault\\fault.json",
+  "lastUpdated": "2026-11-27T07:38:00.000Z"
+}
+```
+
+### 📄 File Schema (When Fault / Short Occurs):
+```json
+{
+  "fault": "1",
+  "okay": "fault detected",
+  "short": "1",
+  "open": "0",
+  "total": 1,
+  "status": "FAULT",
+  "hsr": "S-L1R10C15",
+  "eventCode": 102,
+  "severity": "MAJOR",
+  "description": "LED SHORT Circuit detected at Line 1 Row 10 Col 15",
+  "shortFaults": [
+    {
+      "line": 1,
+      "row": 10,
+      "col": 15,
+      "type": "SHORT",
+      "code": "S-L1R10C15",
+      "description": "LED SHORT Circuit detected at Line 1 Row 10 Col 15"
+    }
+  ],
+  "openFaults": [],
+  "faults": [
+    {
+      "line": 1,
+      "row": 10,
+      "col": 15,
+      "type": "SHORT",
+      "code": "S-L1R10C15",
+      "description": "LED SHORT Circuit detected at Line 1 Row 10 Col 15"
+    }
+  ],
+  "filePath": "D:\\fault\\fault.json",
+  "lastUpdated": "2026-11-27T07:38:00.000Z"
+}
+```
+
+

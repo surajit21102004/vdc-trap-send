@@ -199,7 +199,55 @@ async function runTests() {
   console.assert(healthyRes.data.summary.totalFaults === 0, 'totalFaults should be 0');
   console.assert(healthyRes.data.hsr === 'All OK', 'HSR should be All OK');
 
-  console.log('\n🎉 ALL 10 END-TO-END TESTS (INCLUDING LED SHORT GET API) PASSED SUCCESSFULLY! 🚀\n');
+  // Test 11: Disk JSON File Storage (D:\fault\fault.json or C:\fault\fault.json)
+  console.log('\n1️⃣1️⃣ Testing Auto-Saved Disk JSON File Storage (/api/fault-file)...');
+  const fileRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/fault-file',
+    method: 'GET'
+  });
+  console.log(`   File Storage Status: ${fileRes.status}`);
+  console.log(`   Disk File Path: ${fileRes.data.filePath}`);
+  console.log(`   File Content: fault="${fileRes.data.data.fault}", okay="${fileRes.data.data.okay}", short="${fileRes.data.data.short}", open="${fileRes.data.data.open}"`);
+  console.assert(fileRes.data.success === true, 'Fault file response should be success');
+  console.assert(fileRes.data.data.fault === '0', 'Fault count should be "0" when healthy');
+  console.assert(fileRes.data.data.okay === 'all okay', 'Okay message should be "all okay" when healthy');
+  console.assert(fileRes.data.data.short === '0', 'Short count should be "0"');
+  console.assert(fileRes.data.data.open === '0', 'Open count should be "0"');
+
+  // Now trigger a SHORT fault and verify the disk file is immediately updated
+  console.log('   Triggering SHORT fault and checking disk file update...');
+  await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/send-preset',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { presetType: 'SHORT', line: 1, row: 12, col: 18 });
+
+  const faultFileRes = await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/fault-file',
+    method: 'GET'
+  });
+  console.log(`   Updated File Content: fault="${faultFileRes.data.data.fault}", okay="${faultFileRes.data.data.okay}", short="${faultFileRes.data.data.short}", open="${faultFileRes.data.data.open}"`);
+  console.assert(faultFileRes.data.data.fault === '1', 'Fault count should be "1" after short');
+  console.assert(faultFileRes.data.data.okay === 'fault detected', 'Okay should be "fault detected" after fault');
+  console.assert(faultFileRes.data.data.short === '1', 'Short count should be "1"');
+  console.assert(faultFileRes.data.data.open === '0', 'Open count should be "0"');
+
+  // Clean up back to healthy
+  await request({
+    hostname: 'localhost',
+    port: 8080,
+    path: '/api/send-preset',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { presetType: 'CLEAR' });
+
+  console.log('\n🎉 ALL 11 END-TO-END TESTS (INCLUDING D:\\fault\\fault.json STORAGE) PASSED SUCCESSFULLY! 🚀\n');
 }
 
 runTests().catch(err => {

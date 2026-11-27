@@ -45,6 +45,84 @@ CONFIG = {
 TRAP_HISTORY = []
 MAX_HISTORY = 100
 
+# =============================================================
+# DISK FAULT STORAGE SYSTEM (D:\fault\fault.json or C:\fault\fault.json)
+# =============================================================
+ACTIVE_FAULT_FOLDER = None
+ACTIVE_FAULT_FILE_PATH = None
+
+def resolve_fault_directory():
+    global ACTIVE_FAULT_FOLDER, ACTIVE_FAULT_FILE_PATH
+    candidates = [
+        r"D:\fault",
+        r"C:\fault",
+        os.path.join(os.path.dirname(__file__), "fault")
+    ]
+    for d in candidates:
+        try:
+            os.makedirs(d, exist_ok=True)
+            test_file = os.path.join(d, f".test_{int(time.time()*1000)}.tmp")
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(test_file)
+            ACTIVE_FAULT_FOLDER = d
+            ACTIVE_FAULT_FILE_PATH = os.path.join(d, "fault.json")
+            print(f"📁 [DISK STORAGE] Fault JSON storage active at: {ACTIVE_FAULT_FILE_PATH}")
+            return d
+        except Exception:
+            continue
+
+    local_dir = os.path.join(os.path.dirname(__file__), "fault")
+    try:
+        os.makedirs(local_dir, exist_ok=True)
+    except Exception:
+        pass
+    ACTIVE_FAULT_FOLDER = local_dir
+    ACTIVE_FAULT_FILE_PATH = os.path.join(local_dir, "fault.json")
+    return local_dir
+
+def save_fault_json_to_disk(state):
+    global ACTIVE_FAULT_FOLDER, ACTIVE_FAULT_FILE_PATH
+    try:
+        if not ACTIVE_FAULT_FOLDER or not ACTIVE_FAULT_FILE_PATH:
+            resolve_fault_directory()
+
+        total_faults = state.get("summary", {}).get("totalFaults", len(state.get("faults", [])))
+        short_count = state.get("summary", {}).get("shortCount", len(state.get("shortFaults", [])))
+        open_count = state.get("summary", {}).get("openCount", len(state.get("openFaults", [])))
+        is_healthy = total_faults == 0
+
+        target_file = ACTIVE_FAULT_FILE_PATH
+        alias_file = os.path.join(ACTIVE_FAULT_FOLDER, "fault_status.json")
+
+        payload = {
+            "fault": str(total_faults),
+            "okay": "all okay" if is_healthy else "fault detected",
+            "short": str(short_count),
+            "open": str(open_count),
+            "total": total_faults,
+            "status": "HEALTHY" if is_healthy else "FAULT",
+            "hsr": state.get("hsr", "All OK" if is_healthy else ""),
+            "eventCode": state.get("eventCode", 100 if is_healthy else 102),
+            "severity": state.get("eventSeverity", "INFO" if is_healthy else "MAJOR"),
+            "description": state.get("faultDescription", "All LED pixels OK. Board healthy and functional." if is_healthy else "Fault detected"),
+            "shortFaults": state.get("shortFaults", []),
+            "openFaults": state.get("openFaults", []),
+            "faults": state.get("faults", []),
+            "filePath": target_file,
+            "lastUpdated": datetime.utcnow().isoformat() + "Z"
+        }
+
+        with open(target_file, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        with open(alias_file, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
+        return {"success": True, "folder": ACTIVE_FAULT_FOLDER, "filePath": target_file, "data": payload}
+    except Exception as e:
+        print(f"[DISK STORAGE ERROR] Failed to write fault JSON: {e}")
+        return {"success": False, "error": str(e)}
+
 # Active LED Faults State (Server In-Memory Cache for GET APIs)
 ACTIVE_LED_FAULTS = {
     "status": "HEALTHY",
@@ -64,6 +142,13 @@ ACTIVE_LED_FAULTS = {
     "faults": [],
     "lastUpdated": datetime.utcnow().isoformat() + "Z"
 }
+
+# Initialize fault file on disk immediately on startup
+try:
+    resolve_fault_directory()
+    save_fault_json_to_disk(ACTIVE_LED_FAULTS)
+except Exception:
+    pass
 
 def parse_hsr_to_faults(hsr, default_line=1):
     if not hsr or hsr == "All OK":
@@ -162,6 +247,10 @@ def update_active_faults(new_faults=None, custom_hsr=None, custom_desc=None, def
         "faults": normalized,
         "lastUpdated": datetime.utcnow().isoformat() + "Z"
     }
+
+    # Sync to disk fault JSON file (D:\fault\fault.json or C:\fault\fault.json)
+    save_fault_json_to_disk(ACTIVE_LED_FAULTS)
+
     return ACTIVE_LED_FAULTS
 
 def get_local_ip():
@@ -394,12 +483,35 @@ class IpisRequestHandler(http.server.SimpleHTTPRequestHandler):
                     "allHostIps": [{"interface": i["name"], "ip": i["ip"], "apiUrl": f"http://{i['ip']}:{PORT}/api/led-short", "webUrl": f"http://{i['ip']}:{PORT}"} for i in get_all_network_ips()],
                     "filterShortOnly": f"http://{local_ip}:{PORT}/api/led-short?type=short",
                     "rawHsrString": f"http://{local_ip}:{PORT}/api/led-short?raw=hsr"
+                },
+                "diskStorage": {
+                    "folder": ACTIVE_FAULT_FOLDER,
+                    "filePath": ACTIVE_FAULT_FILE_PATH
                 }
             }
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps(resp, indent=2).encode("utf-8"))
+        elif parsed.path in ("/api/fault-file", "/api/fault-json"):
+            if ACTIVE_FAULT_FILE_PATH and os.path.exists(ACTIVE_FAULT_FILE_PATH):
+                try:
+                    with open(ACTIVE_FAULT_FILE_PATH, "r", encoding="utf-8") as f:
+                        file_data = json.load(f)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True, "folder": ACTIVE_FAULT_FOLDER, "filePath": ACTIVE_FAULT_FILE_PATH, "data": file_data}, indent=2).encode("utf-8"))
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": "Fault file not yet created on disk", "folder": ACTIVE_FAULT_FOLDER, "filePath": ACTIVE_FAULT_FILE_PATH}).encode("utf-8"))
         else:
             return super().do_GET()
 
