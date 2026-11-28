@@ -6,6 +6,6 @@ __pycache__/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-fault/*.json
+vdc_trap_status/*.json
 *.tmp
 

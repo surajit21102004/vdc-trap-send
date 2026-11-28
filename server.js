@@ -54,16 +54,16 @@ const trapHistory = [];
 const MAX_HISTORY = 100;
 
 // =============================================================
-// DISK FAULT STORAGE SYSTEM (D:\fault\fault.json or C:\fault\fault.json)
+// DISK FAULT STORAGE SYSTEM (D:\vdc_trap_status\fault.json or C:\vdc_trap_status\fault.json)
 // =============================================================
 let activeFaultFolder = null;
 let activeFaultFilePath = null;
 
 function resolveFaultDirectory() {
   const candidates = [
-    'D:\\fault',
-    'C:\\fault',
-    path.join(__dirname, 'fault')
+    'D:\\vdc_trap_status',
+    'C:\\vdc_trap_status',
+    path.join(__dirname, 'vdc_trap_status')
   ];
 
   for (const dir of candidates) {
@@ -85,7 +85,7 @@ function resolveFaultDirectory() {
   }
 
   // Final fallback to workspace directory
-  const localDir = path.join(__dirname, 'fault');
+  const localDir = path.join(__dirname, 'vdc_trap_status');
   try {
     fs.mkdirSync(localDir, { recursive: true });
   } catch (e) { }
@@ -136,10 +136,6 @@ function saveFaultJsonToDisk(state) {
 
     // Save fault.json
     fs.writeFileSync(activeFaultFilePath, JSON.stringify(faultJsonPayload, null, 2), 'utf-8');
-
-    // Also write alias fault_status.json
-    const aliasPath = path.join(activeFaultFolder, 'fault_status.json');
-    fs.writeFileSync(aliasPath, JSON.stringify(faultJsonPayload, null, 2), 'utf-8');
 
     return { success: true, folder: activeFaultFolder, filePath: activeFaultFilePath, data: faultJsonPayload };
   } catch (err) {
@@ -280,7 +276,7 @@ function updateActiveFaults(newFaults, customHsr, customDesc, defaultLine = 1) {
     lastUpdated: new Date().toISOString()
   };
 
-  // Sync to disk fault JSON file (D:\fault\fault.json or C:\fault\fault.json)
+  // Sync to disk fault JSON file (D:\vdc_trap_status\fault.json or C:\vdc_trap_status\fault.json)
   saveFaultJsonToDisk(activeLedFaults);
 
   return activeLedFaults;

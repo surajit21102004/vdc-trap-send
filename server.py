@@ -46,7 +46,7 @@ TRAP_HISTORY = []
 MAX_HISTORY = 100
 
 # =============================================================
-# DISK FAULT STORAGE SYSTEM (D:\fault\fault.json or C:\fault\fault.json)
+# DISK FAULT STORAGE SYSTEM (D:\vdc_trap_status\fault.json or C:\vdc_trap_status\fault.json)
 # =============================================================
 ACTIVE_FAULT_FOLDER = None
 ACTIVE_FAULT_FILE_PATH = None
@@ -54,9 +54,9 @@ ACTIVE_FAULT_FILE_PATH = None
 def resolve_fault_directory():
     global ACTIVE_FAULT_FOLDER, ACTIVE_FAULT_FILE_PATH
     candidates = [
-        r"D:\fault",
-        r"C:\fault",
-        os.path.join(os.path.dirname(__file__), "fault")
+        r"D:\vdc_trap_status",
+        r"C:\vdc_trap_status",
+        os.path.join(os.path.dirname(__file__), "vdc_trap_status")
     ]
     for d in candidates:
         try:
@@ -72,7 +72,7 @@ def resolve_fault_directory():
         except Exception:
             continue
 
-    local_dir = os.path.join(os.path.dirname(__file__), "fault")
+    local_dir = os.path.join(os.path.dirname(__file__), "vdc_trap_status")
     try:
         os.makedirs(local_dir, exist_ok=True)
     except Exception:
@@ -93,7 +93,6 @@ def save_fault_json_to_disk(state):
         is_healthy = total_faults == 0
 
         target_file = ACTIVE_FAULT_FILE_PATH
-        alias_file = os.path.join(ACTIVE_FAULT_FOLDER, "fault_status.json")
 
         payload = {
             "fault": str(total_faults),
@@ -114,8 +113,6 @@ def save_fault_json_to_disk(state):
         }
 
         with open(target_file, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        with open(alias_file, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
 
         return {"success": True, "folder": ACTIVE_FAULT_FOLDER, "filePath": target_file, "data": payload}
@@ -248,7 +245,7 @@ def update_active_faults(new_faults=None, custom_hsr=None, custom_desc=None, def
         "lastUpdated": datetime.utcnow().isoformat() + "Z"
     }
 
-    # Sync to disk fault JSON file (D:\fault\fault.json or C:\fault\fault.json)
+    # Sync to disk fault JSON file (D:\vdc_trap_status\fault.json or C:\vdc_trap_status\fault.json)
     save_fault_json_to_disk(ACTIVE_LED_FAULTS)
 
     return ACTIVE_LED_FAULTS

@@ -1058,7 +1058,7 @@
 
   if (btnCopyDiskPath) {
     btnCopyDiskPath.addEventListener('click', () => {
-      const p = diskFilePathDisplay ? diskFilePathDisplay.textContent : 'D:\\fault\\fault.json';
+      const p = diskFilePathDisplay ? diskFilePathDisplay.textContent : 'D:\\vdc_trap_status\\fault.json';
       navigator.clipboard.writeText(p).then(() => {
         showToast('📁 Disk JSON file path copied to clipboard!', 'success');
       });
